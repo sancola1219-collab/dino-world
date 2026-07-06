@@ -13,7 +13,9 @@ function skinMat(sp) {
   if (_skinCache[sp.id]) return _skinCache[sp.id];
   const scaly = sp.build !== 'raptor' && sp.build !== 'pterosaur' && sp.build !== 'earlytheropod';
   const tex = makeSkinTexture(sp.color, sp.accent, hash(sp.id), scaly);
-  const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0.0 });
+  // DoubleSide:放樣(loft)身體的三角纏繞方向會讓 FrontSide 剔除近面、身體看起來透明(幽靈狀);
+  // 雙面渲染保證實體、不透明(對封閉的腿/頭球體無害)。
+  const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0.0, side: THREE.DoubleSide });
   _skinCache[sp.id] = m;
   return m;
 }
@@ -87,7 +89,8 @@ function legTapered(mat, thigh, shin, rHip, rKnee, rAnkle) {
   const knee = sphere(mat, rKnee * 0.96, 8); knee.position.y = -thigh; upper.add(knee);
   const lower = new THREE.Group(); lower.position.y = -thigh;
   const sh = tcyl(mat, rKnee, rAnkle, shin); sh.position.y = -shin / 2; lower.add(sh);
-  const foot = box(mat, rAnkle * 2.2, rAnkle * 0.8, rAnkle * 3.0); foot.position.set(0, -shin + rAnkle * 0.3, rAnkle * 0.7); lower.add(foot);
+  const ankle = sphere(mat, rAnkle * 1.05, 8); ankle.position.y = -shin; lower.add(ankle);
+  const foot = ellip(mat, rAnkle * 1.5, rAnkle * 0.7, rAnkle * 2.2, 10); foot.position.set(0, -shin + rAnkle * 0.15, rAnkle * 0.7); lower.add(foot);   // 平滑腳掌取代方塊
   upper.add(lower); group.add(upper);
   return { group, upper, lower };
 }

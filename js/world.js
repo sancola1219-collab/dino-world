@@ -74,14 +74,19 @@ export function buildWorld(scene, quality) {
 
   scene.add(group);
 
-  const refs = { group, ground, groundMat, water, waterMat, veg };
-  // 依年代氛圍調整:地表/植被色調(material.color 乘算,白=不變)、樹木密度。
+  const refs = { group, ground, groundMat, water, waterMat, veg, waterBaseY: WORLD.waterLevel };
+  // 依年代氛圍調整:地表/植被色調、樹木密度;寒武紀(marine)把水位抬高淹成海。
   refs.applyMood = (mood) => {
     groundMat.color.setHex(mood.ground);
     veg.leafMats.forEach((m) => m.color.setHex(mood.foliage));
     veg.fernMat.color.setHex(mood.foliage);
     for (const im of veg.trees) im.count = Math.round(veg.treeFull * mood.treeRatio);
     veg.ferns.count = Math.round(veg.fernFull * (mood.marine ? 0.2 : Math.max(0.5, mood.treeRatio)));
+    // 水位與水色:海洋時代淹沒谷地成淺海,其餘時代恢復小河。
+    refs.waterBaseY = mood.marine ? 11 : WORLD.waterLevel;
+    water.position.y = refs.waterBaseY;
+    waterMat.color.setHex(mood.marine ? 0x2f6a72 : 0x2f5a63);
+    waterMat.opacity = mood.marine ? 0.6 : 0.82;
   };
   return refs;
 }

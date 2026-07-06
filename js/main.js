@@ -447,9 +447,9 @@ function initMind(sp, i) {
     ai: 'graze', timer: 0.5 + Math.random() * 3,
     tx: sp.spawn.x, tz: sp.spawn.z,          // 遊走目標
     gait: i * 1.3, bob: 0, panic: 0, prey: null, threat: null,
-    // 飛行/游泳參數(翼龍高空盤旋;寒武海洋生物低空「游」在海床上方)。
-    flyR: (marine ? 14 : 22) + (i % 3) * (marine ? 5 : 8), flyPhase: i * 1.1,
-    flyBase: marine ? 7 + (i % 3) * 3 : 28 + (i % 2) * 8,
+    // 飛行/游泳參數(翼龍高空盤旋;寒武海洋生物在水下貼海床游,水位約 11)。
+    flyR: (marine ? 13 : 22) + (i % 3) * (marine ? 4 : 8), flyPhase: i * 1.1,
+    flyBase: marine ? 2.5 + (i % 3) * 1.6 : 28 + (i % 2) * 8,
   };
 }
 // 未指定 herd 時的族群數量:肉食少、巨獸少、小型多。
@@ -763,8 +763,8 @@ function tick(now) {
   if (epic.active) updateEpicCamera(dt);
   else if (state.view === 'overview') updateOverviewCamera(dt); else if (state.view === 'walk') updateWalkCamera(dt);
 
-  // 水面微動。
-  if (worldRefs?.water) worldRefs.water.position.y = WORLD.waterLevel + Math.sin(elapsed * 0.6) * 0.05;
+  // 水面微動(以目前年代的水位為基準,海洋時代水位較高)。
+  if (worldRefs?.water) worldRefs.water.position.y = (worldRefs.waterBaseY ?? WORLD.waterLevel) + Math.sin(elapsed * 0.6) * 0.05;
 
   renderer.render(scene, camera);
   updateLabels();
