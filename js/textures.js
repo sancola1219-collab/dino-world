@@ -98,7 +98,36 @@ export function makeSkinTexture(baseHex, accentHex, seed = 1, scaly = true) {
     }
   }
   ctx.putImageData(img, 0, 0);
-  return canvasTexture(canvas, 1);
+
+  // 法線貼圖:由「鱗片/皺褶」高度場推導,讓體表在光下有立體微結構(更細膩)。
+  const { canvas: ncanvas, ctx: nctx } = makeCanvas(S, S);
+  const nimg = nctx.createImageData(S, S);
+  const nd = nimg.data;
+  const H = (xx, yy) => {
+    const u = xx / S, v = yy / S;
+    const scaleN = scaly ? noise2(u * 90, v * 90, seed + 7) : fbm(u * 22, v * 22, 3, seed);
+    const wrinkle = fbm(u * 10, v * 10, 3, seed + 4) * 0.4;
+    return scaleN * 0.7 + wrinkle;
+  };
+  const strength = scaly ? 2.2 : 1.4;
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const hl = H((x - 1 + S) % S, y), hr = H((x + 1) % S, y);
+      const hu = H(x, (y - 1 + S) % S), hd = H(x, (y + 1) % S);
+      const nx = (hl - hr) * strength, ny = (hu - hd) * strength, nz = 1;
+      const len = Math.hypot(nx, ny, nz);
+      const i = (y * S + x) * 4;
+      nd[i] = (nx / len * 0.5 + 0.5) * 255;
+      nd[i + 1] = (ny / len * 0.5 + 0.5) * 255;
+      nd[i + 2] = (nz / len * 0.5 + 0.5) * 255;
+      nd[i + 3] = 255;
+    }
+  }
+  nctx.putImageData(nimg, 0, 0);
+  const map = canvasTexture(canvas, 1);
+  const normalMap = canvasTexture(ncanvas, 1);
+  normalMap.colorSpace = THREE.NoColorSpace;
+  return { map, normalMap };
 }
 
 /** 樹冠貼圖:綠色葉團 + alpha,用在交叉面片的樹上。 */

@@ -12,20 +12,23 @@ const _skinCache = {};
 function skinMat(sp) {
   if (_skinCache[sp.id]) return _skinCache[sp.id];
   const scaly = sp.build !== 'raptor' && sp.build !== 'pterosaur' && sp.build !== 'earlytheropod';
-  const tex = makeSkinTexture(sp.color, sp.accent, hash(sp.id), scaly);
+  const { map, normalMap } = makeSkinTexture(sp.color, sp.accent, hash(sp.id), scaly);
   // DoubleSide:放樣(loft)身體的三角纏繞方向會讓 FrontSide 剔除近面、身體看起來透明(幽靈狀);
-  // 雙面渲染保證實體、不透明(對封閉的腿/頭球體無害)。
-  const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0.0, side: THREE.DoubleSide });
+  // 雙面渲染保證實體、不透明(對封閉的腿/頭球體無害)。normalMap 讓體表有鱗片/皺褶的立體受光。
+  const m = new THREE.MeshStandardMaterial({
+    map, normalMap, normalScale: new THREE.Vector2(0.6, 0.6),
+    roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide,
+  });
   _skinCache[sp.id] = m;
   return m;
 }
 
 /* ---------------- 基本體 ---------------- */
 function box(mat, w, h, d) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.castShadow = true; m.receiveShadow = true; return m; }
-function sphere(mat, r, seg = 14) { const m = new THREE.Mesh(new THREE.SphereGeometry(r, seg, seg), mat); m.castShadow = true; m.receiveShadow = true; return m; }
-function cone(mat, r, h, seg = 10) { const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg), mat); m.castShadow = true; return m; }
-function ellip(mat, rx, ry, rz, seg = 16) { const m = new THREE.Mesh(new THREE.SphereGeometry(1, seg, seg), mat); m.scale.set(rx, ry, rz); m.castShadow = true; m.receiveShadow = true; return m; }
-function tcyl(mat, rTop, rBot, len, seg = 12) { const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, len, seg), mat); m.castShadow = true; m.receiveShadow = true; return m; }
+function sphere(mat, r, seg = 18) { const m = new THREE.Mesh(new THREE.SphereGeometry(r, seg, seg), mat); m.castShadow = true; m.receiveShadow = true; return m; }
+function cone(mat, r, h, seg = 14) { const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg), mat); m.castShadow = true; return m; }
+function ellip(mat, rx, ry, rz, seg = 20) { const m = new THREE.Mesh(new THREE.SphereGeometry(1, seg, seg), mat); m.scale.set(rx, ry, rz); m.castShadow = true; m.receiveShadow = true; return m; }
+function tcyl(mat, rTop, rBot, len, seg = 16) { const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, len, seg), mat); m.castShadow = true; m.receiveShadow = true; return m; }
 
 const EYE = new THREE.MeshStandardMaterial({ color: 0x0b0805, roughness: 0.25, metalness: 0.1 });
 function addEyes(parent, x, y, z, r) { const e = sphere(EYE, r, 8); e.position.set(x, y, z); parent.add(e); const e2 = e.clone(); e2.position.z = -z; parent.add(e2); }
@@ -33,7 +36,7 @@ function addEyes(parent, x, y, z, r) { const e = sphere(EYE, r, 8); e.position.s
 /* ---------------- 脊椎放樣(核心) ----------------
    nodes: [{x,y,z?,r,ry?,rz?}]  沿身體中線,r=半徑,ry=垂直、rz=水平橢圓係數。
    回傳單一平滑 Mesh。 */
-function loft(mat, nodes, R = 16) {
+function loft(mat, nodes, R = 20) {
   const P = nodes.map((n) => new THREE.Vector3(n.x, n.y, n.z || 0));
   const n = P.length;
   const T = [];
@@ -81,16 +84,24 @@ function loft(mat, nodes, R = 16) {
   return m;
 }
 
-/* ---------------- 腿(漸縮、可動) ---------------- */
+/* ---------------- 腿(放樣肌肉、可動) ----------------
+   用 loft 把大腿/小腿做成有肌肉起伏的平滑肢段(取代直筒圓柱),仍保留 upper/lower 兩段可擺動。 */
 function legTapered(mat, thigh, shin, rHip, rKnee, rAnkle) {
   const group = new THREE.Group();
   const upper = new THREE.Group();
-  const th = tcyl(mat, rHip, rKnee, thigh); th.position.y = -thigh / 2; upper.add(th);
-  const knee = sphere(mat, rKnee * 0.96, 8); knee.position.y = -thigh; upper.add(knee);
+  const hip = sphere(mat, rHip * 1.08, 12); upper.add(hip);                       // 髖關節覆蓋接縫
+  const th = loft(mat, [                                                          // 大腿:上粗、中段肌肉鼓起、收到膝
+    { x: 0, y: 0.1, r: rHip * 1.05 }, { x: 0, y: -thigh * 0.32, r: rHip * 1.12, rz: 1.15 },
+    { x: 0, y: -thigh * 0.72, r: rKnee * 1.08 }, { x: 0, y: -thigh, r: rKnee },
+  ], 14); upper.add(th);
+  const knee = sphere(mat, rKnee * 0.98, 12); knee.position.y = -thigh; upper.add(knee);
   const lower = new THREE.Group(); lower.position.y = -thigh;
-  const sh = tcyl(mat, rKnee, rAnkle, shin); sh.position.y = -shin / 2; lower.add(sh);
-  const ankle = sphere(mat, rAnkle * 1.05, 8); ankle.position.y = -shin; lower.add(ankle);
-  const foot = ellip(mat, rAnkle * 1.5, rAnkle * 0.7, rAnkle * 2.2, 10); foot.position.set(0, -shin + rAnkle * 0.15, rAnkle * 0.7); lower.add(foot);   // 平滑腳掌取代方塊
+  const sh = loft(mat, [                                                          // 小腿:膝→踝漸細,小腿肚微鼓
+    { x: 0, y: 0.05, r: rKnee }, { x: 0, y: -shin * 0.35, r: rKnee * 0.9, rz: 1.05 },
+    { x: 0, y: -shin * 0.8, r: rAnkle * 1.15 }, { x: 0, y: -shin, r: rAnkle },
+  ], 12); lower.add(sh);
+  const ankle = sphere(mat, rAnkle * 1.05, 10); ankle.position.y = -shin; lower.add(ankle);
+  const foot = ellip(mat, rAnkle * 1.6, rAnkle * 0.7, rAnkle * 2.3, 12); foot.position.set(0, -shin + rAnkle * 0.1, rAnkle * 0.75); lower.add(foot);
   upper.add(lower); group.add(upper);
   return { group, upper, lower };
 }

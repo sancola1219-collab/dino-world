@@ -71,10 +71,11 @@ async function init() {
   // 光照。
   sun = new THREE.DirectionalLight(0xfff2d8, 1.5);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(state.settings.quality === 'high' ? 2048 : 1024, state.settings.quality === 'high' ? 2048 : 1024);
+  const shMap = state.settings.quality === 'high' ? 3072 : 1024;
+  sun.shadow.mapSize.set(shMap, shMap);
   sun.shadow.camera.near = 1; sun.shadow.camera.far = 400;
   const sc = sun.shadow.camera; sc.left = -120; sc.right = 120; sc.top = 120; sc.bottom = -120;
-  sun.shadow.bias = -0.0004;
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
   scene.add(sun); scene.add(sun.target);
   ambient = new THREE.AmbientLight(0xffffff, 0.7);
   hemi = new THREE.HemisphereLight(0xbcd3e6, 0x2a2416, 0.4);
