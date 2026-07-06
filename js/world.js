@@ -91,8 +91,10 @@ function buildVegetation(quality) {
   const treeCount = quality === 'low' ? 90 : 200;
   const trunkGeo = new THREE.CylinderGeometry(0.5, 0.9, 1, 6);
   const trunkMeshes = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
-  const leafGeoA = crossPlanes(9);
-  const leafGeoB = crossPlanes(9);
+  // 基礎面片為單位大小(1);實際樹冠尺寸完全由每棵樹的 instance 縮放決定。
+  // (曾踩坑:基礎用 9 又再乘樹冠半徑 → 樹葉放大約 9 倍、一圈就蓋住整個畫面連天空。)
+  const leafGeoA = crossPlanes(1);
+  const leafGeoB = crossPlanes(1);
   const leavesA = new THREE.InstancedMesh(leafGeoA, leafMat, treeCount);
   const leavesB = new THREE.InstancedMesh(leafGeoB, leafMat2, treeCount);
   trunkMeshes.castShadow = true; leavesA.castShadow = true; leavesB.castShadow = true;
@@ -123,6 +125,7 @@ function buildVegetation(quality) {
   }
   trunkMeshes.count = placed; leavesA.count = placed; leavesB.count = placed;
   trunkMeshes.instanceMatrix.needsUpdate = true;
+  leavesA.instanceMatrix.needsUpdate = true; leavesB.instanceMatrix.needsUpdate = true;
   g.add(trunkMeshes, leavesA, leavesB);
 
   // 蕨叢(低矮地被)。

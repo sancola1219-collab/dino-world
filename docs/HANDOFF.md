@@ -134,7 +134,13 @@ state.tourIndex  -1=未導覽,否則為站別
 
 1. **預設相機俯角太陡會整片綠**:`orbit.phi` 太小(接近垂直)時幾乎看不到天空,畫面死板偏暗。
    第一版把 `phi` 從 1.05 調到 **1.32**、`dist` 78、`exposure` 1.25 才平衡了地平線與天空。改相機預設時用 `DW.sample()` 確認 `brightRatio` 沒掉。
-2. **`crossPlanes`/`mergeGeos` 是自寫的幾何合併**(避免依賴 BufferGeometryUtils);若加新植被沿用它,別假設有 addons。
+2. **InstancedMesh 的 billboard 基礎幾何要用「單位大小」**,實際尺寸完全交給 per-instance 縮放。
+   第一版曾把樹葉 `crossPlanes(9)` 又再乘上樹冠半徑(×3~9)→ 樹葉放大約 9 倍成 30~80 單位的巨大面片,
+   一圈就把**整個畫面連天空全蓋成一片綠**(使用者回報「看不到」)。徵狀:`__DW.strips()` 上中下三條同一種綠、
+   隱藏 instanced 植被後天空才露出。診斷法就是用 `strips()` 逐段取樣 + 分類隱藏 mesh 二分法。
+3. **`crossPlanes`/`mergeGeos` 是自寫的幾何合併**(避免依賴 BufferGeometryUtils);若加新植被沿用它,別假設有 addons。
+4. **聚焦取景用低角度(phi≈1.42)近水平**,讓恐龍映在天空/地平線上;俯視角會讓恐龍和地表同色系融在一起看不清。
+   恐龍膚色偏暗,靠 `hemi` 半球光提亮陰影側(0.35+ambI×0.75)+ 曝光 1.35 才能從植被跳出來。
 3. 貼圖全走 Canvas;**不要用彩色 emoji `fillText`**(光柵化極貴,成本會遞延到第一次 `getImageData` 才爆)。
 
 ---

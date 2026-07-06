@@ -44,7 +44,7 @@ async function init() {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.25;
+  renderer.toneMappingExposure = 1.35;
   container.appendChild(renderer.domElement);
 
   scene = new THREE.Scene();
@@ -129,7 +129,7 @@ function applyTime(hour) {
   sky.material.uniforms.horizon.value.copy(s.horizon);
   sun.color.copy(s.sunColor); sun.intensity = s.sunIntensity;
   ambient.color.copy(s.ambColor); ambient.intensity = s.ambIntensity;
-  hemi.intensity = 0.15 + s.ambIntensity * 0.4;
+  hemi.intensity = 0.35 + s.ambIntensity * 0.75;   // 提高天空/地面反照,讓恐龍陰影側不死黑、跳出植被
   const d = s.sunDir.clone().multiplyScalar(160);
   sun.position.set(d.x, Math.max(4, d.y), d.z);
   if (scene.fog) { scene.fog.color.copy(s.horizon); }
@@ -147,9 +147,12 @@ function focusDino(id) {
   UI.setBreadcrumb(`${sp.name} · ${sp.sci}`);
   const d = dinos.find((x) => x.sp.id === id);
   if (d && state.view === 'overview') {
-    // 裝飾層:相機飛過去。
+    // 裝飾層:相機飛過去,並用接近水平的低角度把恐龍映在天空/地平線上(比俯視清楚立體得多)。
     const target = d.root.position.clone().add(new THREE.Vector3(0, sp.heightM * 0.5, 0));
-    startFly(target, Math.max(14, sp.lengthM * 1.6));
+    // 依體型決定距離,讓恐龍約佔畫面 60% 高。特徵尺寸取身高與體長折衷。
+    const char = Math.max(sp.heightM * 1.1, sp.lengthM * 0.55);
+    const dist = clamp(char * 1.9, 8, 70);
+    startFly(target, dist, 1.42, sp.spawn.rot + 2.3);    // 低角度近水平、從側前方看剪影
   }
 }
 function toggleFollow() {
@@ -161,8 +164,16 @@ function closeInfo() {
   UI.hideInfo(); UI.setBreadcrumb('白堊紀晚期 · 谷地');
 }
 
-function startFly(target, dist) {
-  flyTween = { from: orbit.target.clone(), to: target.clone(), fromD: orbit.dist, toD: dist, t: 0 };
+// 相機飛行:補間 目標點、距離,可選補間 phi(俯仰)/theta(方位)。角度省略時維持現值。
+function startFly(target, dist, phi = orbit.phi, theta = orbit.theta) {
+  // theta 取最短路徑,避免繞一大圈。
+  let dTheta = theta - orbit.theta;
+  while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+  while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+  flyTween = {
+    from: orbit.target.clone(), to: target.clone(), fromD: orbit.dist, toD: dist,
+    fromPhi: orbit.phi, toPhi: phi, fromTheta: orbit.theta, toTheta: orbit.theta + dTheta, t: 0,
+  };
 }
 
 /* ---------------- 視角切換 ---------------- */
@@ -320,6 +331,8 @@ function updateOverviewCamera(dt) {
     const e = easeInOut(flyTween.t);
     orbit.target.lerpVectors(flyTween.from, flyTween.to, e);
     orbit.dist = flyTween.fromD + (flyTween.toD - flyTween.fromD) * e;
+    orbit.phi = flyTween.fromPhi + (flyTween.toPhi - flyTween.fromPhi) * e;
+    orbit.theta = flyTween.fromTheta + (flyTween.toTheta - flyTween.fromTheta) * e;
     if (flyTween.t >= 1) flyTween = null;
   }
   // 跟隨:目標平滑追上聚焦恐龍。
@@ -466,6 +479,15 @@ function exposeTestAPI() {
   window.__DW = {
     state,
     dinos,
+    _cam: camera, _r: renderer, _scene: scene, THREE,
+    camInfo() { return { pos: camera.position.toArray().map((v) => +v.toFixed(1)), target: orbit.target.toArray().map((v) => +v.toFixed(1)), dist: +orbit.dist.toFixed(1), phi: +orbit.phi.toFixed(2), theta: +orbit.theta.toFixed(2) }; },
+    strips() {
+      renderer.render(scene, camera);
+      const gl = renderer.getContext(); const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+      const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const band = (y0, y1) => { let r = 0, g = 0, b = 0, n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < w; x += 4) { const i = (y * w + x) * 4; r += px[i]; g += px[i + 1]; b += px[i + 2]; n++; } return [r / n | 0, g / n | 0, b / n | 0]; };
+      return { top: band(h * 0.7, h), mid: band(h * 0.35, h * 0.65), bottom: band(0, h * 0.3) }; // 注意 readPixels 原點在左下
+    },
     forceSize(w, h) { container.style.width = w + 'px'; container.style.height = h + 'px'; sizeToContainer(); },
     step(ms = 16) { tick(lastTick + ms); },        // 假時鐘推進一幀
     focus(id) { focusDino(id); },

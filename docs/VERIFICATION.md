@@ -47,4 +47,5 @@
 
 | 日期 | 模型 | 結果 |
 |---|---|---|
-| 2026-07-06 | Claude Opus 4.8 | 全綠。dinoCount=8;night≈0、noon≈0.53(dayVsNight=true);focus='trex' infoOpen=true focusBright≈0.75;tourLast=7;walk/overview 往返正常;timeSweep=ok;console 零錯誤。相機預設 phi=1.32/dist=78/exposure=1.25。 |
+| 2026-07-06 | Claude Opus 4.8 | 首版。dinoCount=8;dayVsNight=true;focus/tour/walk 正常;console 零錯誤。相機預設 phi=1.32/dist=78/exposure=1.25。 |
+| 2026-07-06 | Claude Opus 4.8(修) | **修掉「整片綠看不到」bug**:樹葉 billboard 基礎幾何 9→1(過大蓋住天空)。重驗:night=0.025、noon=0.852;暴龍中央直行由上到下=藍天→棕色暴龍→綠地(分層正確);focus 改低角度 phi=1.42、hemi 半球光加強、exposure=1.35 讓恐龍跳出植被;tourLast=7;timeSweep=ok;console 零錯誤。 |
