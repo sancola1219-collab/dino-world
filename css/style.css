@@ -231,3 +231,28 @@ body.walking #periodBar{opacity:0.2;pointer-events:none}
   #dayRange{width:130px}
   #infoPanel{padding:20px}
 }
+
+/* ---- 紀元史詩:電影字幕、上下黑邊、白光 ---- */
+.navEpic{color:var(--gold-bright);border-color:var(--stroke)}
+.navEpic:hover{background:rgba(201,163,92,0.14);border-color:var(--gold)}
+body.epic #topbar,body.epic #periodBar,body.epic #timeBar,body.epic #bottomLeft,
+body.epic #infoPanel,body.epic #dexPanel,body.epic #settings,body.epic #tourCard,body.epic #labels{opacity:0;pointer-events:none;transition:opacity .5s}
+
+#cinematic{position:fixed;inset:0;z-index:55;pointer-events:none;opacity:0;transition:opacity .6s}
+#cinematic.on{opacity:1}
+.cineBar{position:absolute;left:0;right:0;height:11vh;background:#000;transform:scaleY(0);transition:transform .7s cubic-bezier(.2,.8,.2,1)}
+.cineBar.top{top:0;transform-origin:top}
+.cineBar.bottom{bottom:0;transform-origin:bottom}
+#cinematic.on .cineBar{transform:scaleY(1)}
+#cineText{position:absolute;left:50%;bottom:15vh;transform:translateX(-50%);width:min(760px,86vw);text-align:center}
+#cineText.show #epicChapter{animation:cineIn .8s ease both}
+#cineText.show #epicTitle{animation:cineIn .8s .1s ease both}
+#cineText.show #epicCaption{animation:cineIn .9s .25s ease both}
+@keyframes cineIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+#epicChapter{font-size:11px;letter-spacing:0.5em;color:var(--gold);margin-bottom:12px;text-transform:uppercase}
+#epicTitle{font-family:var(--serif);font-weight:500;font-size:clamp(24px,4vw,40px);letter-spacing:0.14em;color:#fff;margin-bottom:14px;text-shadow:0 2px 24px rgba(0,0,0,0.8)}
+#epicCaption{font-size:clamp(13px,1.6vw,16px);line-height:2;color:#e8e4da;letter-spacing:0.05em;text-shadow:0 1px 12px rgba(0,0,0,0.9)}
+#epicSkip{position:absolute;top:calc(11vh + 20px);right:24px;pointer-events:auto;background:rgba(11,13,12,0.5);border:1px solid var(--stroke);color:var(--text-dim);
+  font-family:var(--sans);font-size:12px;letter-spacing:0.1em;padding:8px 16px;border-radius:20px;cursor:pointer;backdrop-filter:blur(6px);transition:color .2s,border-color .2s}
+#epicSkip:hover{color:var(--gold-bright);border-color:var(--gold)}
+#flash{position:fixed;inset:0;z-index:58;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}

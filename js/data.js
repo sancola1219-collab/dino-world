@@ -234,6 +234,21 @@ export function tourOf(periodId) {
   }));
 }
 
+// ---- 紀元史詩:從三疊紀恐龍黎明,一路演到白堊紀末隕石撞擊、大滅絕、鳥類存續 ----
+// 每個 stage 的 at = 進入該階段的秒數(累進);main.js 依此驅動年代切換、隕石、撞擊、餘燼。
+export const EPIC = {
+  totalSec: 94,
+  stages: [
+    { at: 0,  period: 'triassic',   title: '三疊紀 · 恐龍的黎明', caption: '兩億多年前,第一批恐龍在乾熱的盤古大陸上悄悄登場,體型還小,和眾多爬行類共享世界。' },
+    { at: 20, period: 'jurassic',   title: '侏羅紀 · 巨龍的時代', caption: '大陸裂解、氣候轉暖,森林蔓延。植食恐龍長成前所未見的龐然大物,異特龍稱霸大地。' },
+    { at: 42, period: 'cretaceous', title: '白堊紀 · 繁盛的頂點', caption: '開花植物遍地綻放,角龍與鴨嘴龍成群,暴龍站上食物鏈頂端,巨大的翼龍統治天空。' },
+    { at: 63, meteor: true,         title: '天外之光',           caption: '一道白光劃過天際,越來越亮、越來越大——一顆直徑十公里的小行星,正衝向地球。' },
+    { at: 74, impact: true,         title: '撞擊',               caption: '' },
+    { at: 78, aftermath: true,      title: '大滅絕',             caption: '塵埃遮蔽陽光,氣溫驟降,森林枯萎。六千六百萬年前,非鳥恐龍的時代戛然而止。' },
+    { at: 88, coda: true,           title: '而生命,延續著',      caption: '但牠們並未完全消失——恐龍的後代,鳥類,一直飛到了今天。' },
+  ],
+};
+
 // 時間滑桿的語意:回傳該時刻的相位名稱。
 export function phaseOf(hour) {
   if (hour < 5) return '深夜';

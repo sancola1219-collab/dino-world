@@ -31,6 +31,7 @@
     <button id="navWalk" class="navBtn">漫遊</button>
     <button id="navDex" class="navBtn">圖鑑</button>
     <button id="navTour" class="navBtn">生態導覽</button>
+    <button id="navEpic" class="navBtn navEpic">紀元史詩</button>
     <button id="navSettings" class="navBtn" title="設定">⚙</button>
   </nav>
 </header>
@@ -147,6 +148,19 @@
 </div>
 
 <div id="fade"></div>
+
+<!-- 紀元史詩:電影感字幕、上下黑邊、白光、結束鈕 -->
+<div id="cinematic">
+  <div class="cineBar top"></div>
+  <div class="cineBar bottom"></div>
+  <div id="cineText">
+    <div id="epicChapter"></div>
+    <h2 id="epicTitle"></h2>
+    <p id="epicCaption"></p>
+  </div>
+  <button id="epicSkip">結束史詩 ✕</button>
+</div>
+<div id="flash"></div>
 
 <script type="module" src="js/main.js"></script>
 </body>

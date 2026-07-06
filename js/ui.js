@@ -39,6 +39,10 @@ export function initUI(handlers) {
 
   // 說明。
   $('helpClose').onclick = () => hide('helpOverlay');
+
+  // 紀元史詩。
+  $('navEpic').onclick = () => handlers.onEpic();
+  $('epicSkip').onclick = () => handlers.onEpicEnd();
 }
 
 function toggle(id) { $(id).classList.toggle('open'); }
@@ -176,6 +180,24 @@ export function hideLoading() {
   setTimeout(() => { el.style.display = 'none'; }, 700);
 }
 export function showHelp() { show('helpOverlay'); }
+export function hideHelp() { hide('helpOverlay'); }
+export function hidePeriodIntro() { hide('periodIntro'); }
+
+// 紀元史詩:電影字幕與白光。
+export function setEpic(on) {
+  document.body.classList.toggle('epic', on);
+  $('cinematic').classList.toggle('on', on);
+}
+export function showCinematic(title, caption) {
+  $('epicChapter').textContent = '紀元史詩';
+  $('epicTitle').textContent = title || '';
+  const cap = $('epicCaption'); cap.textContent = caption || '';
+  cap.style.display = caption ? '' : 'none';
+  // 重播淡入動畫。
+  const box = $('cineText'); box.classList.remove('show'); void box.offsetWidth; box.classList.add('show');
+}
+export function hideCinematic() { $('cinematic').classList.remove('on'); }
+export function setFlash(op) { const f = $('flash'); f.style.opacity = op; }
 
 // 高亮頂欄目前視角。
 export function setActiveView(view) {

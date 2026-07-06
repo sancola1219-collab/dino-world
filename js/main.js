@@ -3,10 +3,11 @@
 // 兩條鐵律(改邏輯前必讀):
 //  1) 狀態與動畫分離。使用者操作當下 state 立即改變(聚焦、切視角、資訊面板);相機飛行/淡入只是裝飾。
 //     動畫被節流/中斷/掉幀,邏輯不受影響。過去專案把邏輯綁在動畫回呼上,背景分頁節流時整個卡死——不要走回頭路。
-//  2) 恐龍位置與姿態由 state.time(天內時刻)與各自的 wander 種子純函數決定,不做跨幀增量累加,
-//     所以任意暫停/拉時間軸都不會累積誤差。
+//  2) 恐龍自主行為是 dt 驅動的模擬(每隻一個 mind:位置/朝向/速度/AI 狀態,見 updateHerd)。
+//     對節流的韌性:dt 已夾在 ≤0.05,背景節流時只是步進變大、行為持續,不凍結。天色仍是 state.time 的純函數。
+//     紀元史詩(updateEpic)也是 dt 驅動、可隨時結束並完整復原(恐龍縮放/天空/相機)。
 import * as THREE from 'three';
-import { SPECIES, SPECIES_BY_ID, PERIODS, PERIOD_BY_ID, speciesOfPeriod, tourOf, phaseOf } from './data.js';
+import { SPECIES, SPECIES_BY_ID, PERIODS, PERIOD_BY_ID, speciesOfPeriod, tourOf, phaseOf, EPIC } from './data.js';
 import { buildWorld, buildSky, skyStateForHour, heightAt, WORLD } from './world.js';
 import { buildDino } from './dino.js';
 import * as UI from './ui.js';
@@ -34,6 +35,11 @@ const clock = { last: 0 };
 const orbit = { target: new THREE.Vector3(0, 4, 0), dist: 78, theta: 0.6, phi: 1.32, dragging: false, px: 0, py: 0 };
 const walk = { pos: new THREE.Vector3(0, 0, 40), yaw: Math.PI, pitch: -0.05, vel: new THREE.Vector3(), keys: {}, locked: false, lockFailCount: 0, lastUnlock: -1 };
 let flyTween = null;
+
+// 紀元史詩模式(自動演出:三疊→侏羅→白堊→隕石→滅絕→鳥類)。
+const epic = { active: false, t: 0, stage: -1, meteor: null, fireball: null, ash: null, skyFall: 0, shake: 0 };
+const METEOR_START = new THREE.Vector3(280, 440, -540);
+const METEOR_HIT = new THREE.Vector3(150, 6, -230);
 
 const container = document.getElementById('app');
 const labelLayer = document.getElementById('labels');
@@ -86,7 +92,10 @@ async function init() {
     root.rotation.y = sp.spawn.rot;
     scene.add(root);
     const label = makeLabel(sp);
-    dinos.push({ root, sp, base: { x: sp.spawn.x, z: sp.spawn.z, rot: sp.spawn.rot }, label, phase: i * 1.7 });
+    const d = { root, sp, base: { x: sp.spawn.x, z: sp.spawn.z, rot: sp.spawn.rot }, label, phase: i * 1.7 };
+    d.mind = initMind(sp, i);
+    d.mind.origScale = root.scale.x;   // 供史詩滅絕時縮小消失後復原
+    dinos.push(d);
     i++;
     UI.setLoad(0.6 + 0.35 * (i / SPECIES.length), `喚醒恐龍... ${sp.name}`);
     await yieldFrame();
@@ -332,6 +341,8 @@ function bindUI() {
     onTime: (h) => { state.timeFlow = false; UI.setFlowIcon(false); applyTime(h); },
     onToggleFlow: toggleFlow,
     onSetting: applySetting,
+    onEpic: startEpic,
+    onEpicEnd: endEpic,
   });
 }
 function toggleFlow() { state.timeFlow = !state.timeFlow; UI.setFlowIcon(state.timeFlow); }
@@ -417,36 +428,260 @@ function updateWalkCamera(dt) {
   camera.lookAt(walk.pos.clone().add(dir));
 }
 
-/* ---------------- 恐龍動畫(裝飾層,可被節流不影響狀態) ---------------- */
-function animateDinos(elapsed) {
-  for (const d of dinos) {
-    if (!d.root.visible) continue;   // 只動目前年代的恐龍
-    const parts = d.root.userData.parts;
-    const sp = d.sp;
-    const t = elapsed + d.phase;
-    if (sp.build === 'pterosaur') {
-      // 盤旋 + 拍翼。
-      const r = 26;
-      d.root.position.set(Math.cos(t * 0.18) * r, 32 + Math.sin(t * 0.4) * 3, Math.sin(t * 0.18) * r);
-      d.root.rotation.y = -t * 0.18 + Math.PI / 2;
-      const flap = Math.sin(t * 2.2) * 0.5;
-      if (parts.wings) { parts.wings[0].rotation.x = flap; parts.wings[1].rotation.x = -flap; }
-      continue;
+/* ================= 恐龍自主行為(生態模擬) =================
+   每隻恐龍有一個 mind:自己的位置/朝向/速度/行為狀態,每幀依 dt 推進(不是純時間函數)。
+   對節流的韌性:dt 已在 tick 夾在 ≤0.05,節流時只是步進變大、行為持續前進,不會凍結;
+   使用者操作(聚焦/切年代/視角)仍是狀態層立即生效,行為只是讓世界活起來的裝飾模擬。 */
+function initMind(sp, i) {
+  const maxSpeed = clamp(9 - sp.heightM * 0.55, 2.2, 8.5);   // 越大越慢
+  return {
+    x: sp.spawn.x, z: sp.spawn.z, homeX: sp.spawn.x, homeZ: sp.spawn.z,
+    heading: sp.spawn.rot, speed: 0, maxSpeed,
+    ai: 'graze', timer: 0.5 + Math.random() * 3,
+    tx: sp.spawn.x, tz: sp.spawn.z,          // 遊走目標
+    gait: i * 1.3, bob: 0, panic: 0, prey: null, threat: null,
+    // 翼龍飛行參數。
+    flyR: 22 + (i % 3) * 8, flyPhase: i * 1.1, flyBase: 30 + (i % 2) * 6,
+  };
+}
+
+const VALLEY_R = WORLD.size * 0.42;
+function riverX(z) { return Math.sin(z / 60) * 22 + 4; }          // 河中心(與 world.js 一致)
+function isHerb(sp) { return sp.diet === 'herb' || sp.diet === 'omni'; }
+
+function updateHerd(dt) {
+  const land = dinos.filter((d) => d.root.visible && d.sp.build !== 'pterosaur');
+  // 掠食者鎖定 + 獵物受驚(每幀評估,製造可見的追逐事件)。
+  for (const c of land) {
+    if (c.sp.diet !== 'carn') continue;
+    if (c.mind.ai !== 'hunt') continue;
+    let best = null, bd = 1e9;
+    for (const h of land) {
+      if (h === c || !isHerb(h.sp)) continue;
+      const dd = (h.mind.x - c.mind.x) ** 2 + (h.mind.z - c.mind.z) ** 2;
+      if (dd < bd) { bd = dd; best = h; }
     }
-    // 陸生:輕微踏步 + 頸尾擺動 + 呼吸起伏。
-    const breathe = Math.sin(t * 0.8) * 0.02;
-    d.root.position.y = heightAt(d.base.x, d.base.z) + breathe;
-    if (parts.legs) {
-      parts.legs.forEach((leg, li) => {
-        const swing = Math.sin(t * 1.4 + li * Math.PI) * 0.18;
-        leg.upper.rotation.z = swing;
-        if (leg.lower) leg.lower.rotation.z = Math.max(0, -swing) * 0.6;
-      });
+    c.mind.prey = best;
+    if (best) {
+      const dist = Math.sqrt(bd);
+      if (dist < 55) { best.mind.ai = 'flee'; best.mind.threat = c; best.mind.panic = 1; best.mind.timer = Math.max(best.mind.timer, 1.5); }
+      if (dist < 5.5) { c.mind.ai = 'patrol'; c.mind.prey = null; c.mind.timer = 2 + Math.random() * 3; }   // 追到了 → 獵物竄逃、掠食者放棄
     }
-    if (parts.neck) parts.neck.rotation.z = Math.sin(t * 0.5) * 0.06 + (parts.neck.userData.base || 0);
-    if (parts.tail) parts.tail.rotation.y = Math.sin(t * 0.6) * 0.12;
-    if (parts.head) parts.head.rotation.y = Math.sin(t * 0.35) * 0.15;
   }
+  for (const d of land) stepDino(d, dt);
+}
+
+function chooseBehavior(d) {
+  const m = d.mind, sp = d.sp, r = Math.random();
+  m.timer = 3 + Math.random() * 5;
+  if (sp.diet === 'carn') {
+    if (r < 0.42) { m.ai = 'hunt'; m.timer = 5 + Math.random() * 5; }
+    else { m.ai = 'patrol'; pickWander(d, 45); }
+  } else {
+    if (m.ai === 'flee') { m.ai = 'graze'; m.timer = 2 + Math.random() * 2; return; }
+    if (r < 0.42) { m.ai = 'graze'; m.timer = 3 + Math.random() * 4; }
+    else if (r < 0.72) { m.ai = 'walk'; pickWander(d, 30); }
+    else { m.ai = 'drink'; m.tx = riverX(m.homeZ); m.tz = m.homeZ + (Math.random() - 0.5) * 20; }
+  }
+}
+function pickWander(d, radius) {
+  const a = Math.random() * Math.PI * 2, r = radius * (0.3 + Math.random() * 0.7);
+  d.mind.tx = clamp(d.mind.homeX + Math.cos(a) * r, -VALLEY_R, VALLEY_R);
+  d.mind.tz = clamp(d.mind.homeZ + Math.sin(a) * r, -VALLEY_R, VALLEY_R);
+}
+
+function stepDino(d, dt) {
+  const m = d.mind, sp = d.sp;
+  m.timer -= dt;
+  // 逃跑狀態:威脅消失(遠離或不在)就回到覓食。
+  if (m.ai === 'flee' && (!m.threat || !m.threat.root.visible || dist2(m, m.threat.mind) > 62 * 62)) { m.ai = 'graze'; m.threat = null; m.timer = 1.5 + Math.random() * 2; }
+  if (m.timer <= 0) chooseBehavior(d);
+  m.panic = Math.max(0, m.panic - dt * 0.5);
+
+  // 決定目標方向與速度。
+  let desired = m.heading, targetSpeed = 0, grazing = false;
+  if (m.ai === 'graze') { targetSpeed = 0; grazing = true; }
+  else if (m.ai === 'walk' || m.ai === 'patrol') { desired = angTo(m, m.tx, m.tz); targetSpeed = m.maxSpeed * 0.42; if (reached(m, 3)) m.timer = Math.min(m.timer, 0.1); }
+  else if (m.ai === 'drink') { desired = angTo(m, m.tx, m.tz); targetSpeed = m.maxSpeed * 0.4; if (reached(m, 6)) { targetSpeed = 0; grazing = true; } }
+  else if (m.ai === 'hunt' && m.prey) { desired = angTo(m, m.prey.mind.x, m.prey.mind.z); targetSpeed = m.maxSpeed * 1.05; }
+  else if (m.ai === 'flee' && m.threat) { desired = Math.atan2(-(m.z - m.threat.mind.z), (m.x - m.threat.mind.x)); targetSpeed = m.maxSpeed * 1.35; }
+  else { targetSpeed = 0; }
+
+  // 邊界:接近谷地邊緣就轉回中心。
+  const rad = Math.hypot(m.x, m.z);
+  if (rad > VALLEY_R * 0.95) { desired = Math.atan2(-(-m.z), (-m.x)); targetSpeed = Math.max(targetSpeed, m.maxSpeed * 0.4); }
+
+  // 轉向(限制角速度)與加速。
+  let dh = wrapPi(desired - m.heading);
+  const maxTurn = (m.ai === 'flee' || m.ai === 'hunt' ? 3.2 : 1.8) * dt;
+  m.heading += clamp(dh, -maxTurn, maxTurn);
+  m.speed += (targetSpeed - m.speed) * Math.min(1, dt * 2.5);
+
+  // 前進(前向 = (cosθ, -sinθ) 對應 root.rotation.y=θ)。
+  const nx = m.x + Math.cos(m.heading) * m.speed * dt;
+  const nz = m.z - Math.sin(m.heading) * m.speed * dt;
+  // 陸生避免踏進深水(飲水時可到岸邊)。
+  const gy = heightAt(nx, nz);
+  if (m.ai !== 'drink' && gy < WORLD.waterLevel + 0.4) { m.speed *= 0.5; }
+  else { m.x = clamp(nx, -VALLEY_R - 4, VALLEY_R + 4); m.z = clamp(nz, -VALLEY_R - 4, VALLEY_R + 4); }
+
+  // 套用到模型。
+  m.bob = grazing ? Math.sin((performance.now() / 1000 + d.phase) * 1.6) * 0.12 : 0;
+  const groundY = heightAt(m.x, m.z);
+  d.root.position.set(m.x, groundY - (grazing ? Math.abs(m.bob) : -Math.abs(Math.sin(m.gait) * 0.02 * m.speed)), m.z);
+  if (m.speed > 0.05) d.root.rotation.y = m.heading;
+
+  // 步態:腿擺動頻率隨速度;靜止時腿不動。
+  m.gait += m.speed * dt * 1.4;
+  const parts = d.root.userData.parts;
+  if (parts && parts.legs) {
+    const amp = Math.min(0.5, 0.12 + m.speed * 0.05);
+    parts.legs.forEach((leg, li) => {
+      const sw = Math.sin(m.gait * 3 + li * Math.PI) * amp;
+      leg.upper.rotation.z = sw;
+      if (leg.lower) leg.lower.rotation.z = Math.max(0, -sw) * 0.7;
+    });
+  }
+}
+
+// 翼龍:盤旋 + 俯衝 + 拍翼。
+function animateFlyers(elapsed) {
+  for (const d of dinos) {
+    if (!d.root.visible || d.sp.build !== 'pterosaur') continue;
+    const m = d.mind, t = elapsed * 0.16 + d.mind.flyPhase;
+    const r = m.flyR + Math.sin(t * 0.7) * 8;
+    const y = m.flyBase + Math.sin(t * 1.3) * 7;              // 起伏俯衝
+    const x = Math.cos(t) * r, z = Math.sin(t) * r;
+    d.root.position.set(x, epic.active && epic.skyFall ? Math.max(heightAt(x, z) + 1, y - epic.skyFall * 30) : y, z);
+    d.root.rotation.y = -t + Math.PI / 2;
+    d.root.rotation.z = Math.sin(t) * 0.15;
+    const flap = Math.sin(elapsed * 2.4 + d.phase) * 0.5;
+    const parts = d.root.userData.parts;
+    if (parts && parts.wings) { parts.wings[0].rotation.x = flap; parts.wings[1].rotation.x = -flap; }
+  }
+}
+
+function dist2(a, b) { return (a.x - b.x) ** 2 + (a.z - b.z) ** 2; }
+function angTo(m, tx, tz) { return Math.atan2(-(tz - m.z), (tx - m.x)); }
+function reached(m, r) { return (m.x - m.tx) ** 2 + (m.z - m.tz) ** 2 < r * r; }
+function wrapPi(a) { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; }
+
+/* ================= 紀元史詩模式 =================
+   一場自動演出:三疊紀黎明 → 侏羅巨龍 → 白堊繁盛 → 隕石劃空 → 撞擊白光 → 大滅絕 → 鳥類存續。
+   全程 dt 驅動(節流韌性),使用者可隨時「結束」返回。 */
+function startEpic() {
+  if (epic.active) return;
+  epic.active = true; epic.t = 0; epic.stage = -1; epic.skyFall = 0; epic.shake = 0;
+  state.focus = null; state.following = false; state.timeFlow = false; flyTween = null;
+  UI.hideInfo(); endTour(); UI.hidePeriodIntro(); UI.hideHelp();
+  document.body.classList.add('epic');
+  UI.setEpic(true);
+  applyTime(12);                                     // 正午為起點
+  orbit.target.set(0, 6, 0); orbit.dist = 96; orbit.phi = 1.3; orbit.theta = 0.4;
+}
+function endEpic() {
+  if (!epic.active) return;
+  epic.active = false; document.body.classList.remove('epic');
+  UI.setEpic(false); UI.hideCinematic(); UI.setFlash(0);
+  if (epic.meteor) { scene.remove(epic.meteor); epic.meteor = null; }
+  if (epic.fireball) { scene.remove(epic.fireball); epic.fireball = null; }
+  if (epic.ash) { scene.remove(epic.ash); epic.ash = null; }
+  epic.skyFall = 0;
+  dinos.forEach((d) => d.root.scale.setScalar(d.mind.origScale));   // 復活恐龍
+  setPeriod('cretaceous', true);
+  resetCamera();
+}
+function nextAt(si) { return si + 1 < EPIC.stages.length ? EPIC.stages[si + 1].at : EPIC.totalSec; }
+
+function updateEpic(dt) {
+  epic.t = Math.min(EPIC.totalSec, epic.t + dt);
+  let si = 0; for (let k = 0; k < EPIC.stages.length; k++) if (epic.t >= EPIC.stages[k].at) si = k;
+  const st = EPIC.stages[si];
+  if (si !== epic.stage) { enterStage(si, st); epic.stage = si; }
+  const span = Math.max(0.01, nextAt(si) - st.at), p = clamp((epic.t - st.at) / span, 0, 1);
+  if (st.meteor) meteorPhase(p);
+  else if (st.impact) impactPhase(p);
+  else if (st.aftermath || st.coda) aftermathPhase(dt, st.coda);
+  if (epic.t >= EPIC.totalSec) endEpic();
+}
+function enterStage(si, st) {
+  UI.showCinematic(st.title, st.caption);
+  if (st.period) { setPeriod(st.period, true); dinos.forEach((d) => d.root.scale.setScalar(d.mind.origScale)); }
+  if (st.meteor && !epic.meteor) { epic.meteor = buildMeteor(); scene.add(epic.meteor); }
+  if (st.impact) {
+    UI.setFlash(1); epic.shake = 1;
+    if (epic.meteor) { scene.remove(epic.meteor); epic.meteor = null; }
+    if (!epic.fireball) { epic.fireball = buildFireball(); scene.add(epic.fireball); }
+  }
+  if (st.aftermath && !epic.ash) { epic.ash = buildAsh(); scene.add(epic.ash); epic.skyFall = 1; }
+}
+function meteorPhase(p) {
+  if (epic.meteor) { epic.meteor.position.lerpVectors(METEOR_START, METEOR_HIT, p * p); epic.meteor.scale.setScalar(1 + p * 2.5); }
+  applyDoomSky(p * 0.45);
+  if (p > 0.75) dinos.forEach((d) => { if (d.root.visible && d.sp.build !== 'pterosaur') { d.mind.ai = 'flee'; d.mind.threat = null; d.mind.panic = 1; d.mind.speed = d.mind.maxSpeed * 1.3; } });
+}
+function impactPhase(p) {
+  UI.setFlash(Math.max(0, 1 - p * 2.2));
+  applyDoomSky(0.45 + p * 0.55);
+  epic.skyFall = 1;
+  if (epic.fireball) { epic.fireball.scale.setScalar(1 + p * 10); epic.fireball.material.opacity = Math.max(0, 0.95 - p * 0.95); }
+  dinos.forEach((d) => { if (d.sp.build !== 'pterosaur') { const k = Math.max(0.0001, 1 - p * 1.15); d.root.scale.setScalar(d.mind.origScale * k); } });
+}
+function aftermathPhase(dt, coda) {
+  applyDoomSky(coda ? 0.82 : 1);                    // 終幕天色微亮,象徵新生
+  UI.setFlash(0);                                    // 確保白光已散(跳段時也歸零)
+  dinos.forEach((d) => d.root.scale.setScalar(0.0001));   // 恐龍全數消失(含翼龍)
+  if (epic.ash) {                                    // 餘燼飄落
+    const pos = epic.ash.geometry.attributes.position; const a = pos.array;
+    for (let i = 1; i < a.length; i += 3) { a[i] -= dt * 6; if (a[i] < 0) a[i] += 120; }
+    pos.needsUpdate = true; epic.ash.rotation.y += dt * 0.02;
+  }
+}
+function applyDoomSky(k) {
+  k = clamp(k, 0, 1);
+  const mix = (baseHex, doomHex) => new THREE.Color(baseHex).lerp(new THREE.Color(doomHex), k);
+  sky.material.uniforms.top.value.copy(mix(0x2b7bd6, 0x140805));
+  sky.material.uniforms.bottom.value.copy(mix(0xcfe2f0, 0x40160a));
+  const hor = mix(0xeef4f8, 0x7a2a0a);
+  sky.material.uniforms.horizon.value.copy(hor);
+  sun.intensity = 1.7 * (1 - k * 0.9); sun.color.copy(mix(0xfff2d8, 0xff4a1e));
+  ambient.intensity = 0.7 * (1 - k * 0.55); hemi.intensity = 1.0 * (1 - k * 0.5);
+  if (scene.fog) { scene.fog.color.copy(hor); scene.fog.near = 80 - k * 40; scene.fog.far = 340 - k * 200; }
+  renderer.setClearColor(hor);
+}
+function updateEpicCamera(dt) {
+  orbit.theta += dt * 0.055;
+  const st = EPIC.stages[epic.stage] || {};
+  const targetPhi = st.meteor ? 1.02 : st.impact ? 1.12 : st.aftermath ? 1.36 : 1.3;
+  orbit.phi += (targetPhi - orbit.phi) * Math.min(1, dt * 1.2);
+  const s = Math.sin(orbit.phi), c = Math.cos(orbit.phi);
+  let px = orbit.target.x + orbit.dist * s * Math.sin(orbit.theta);
+  let py = orbit.target.y + orbit.dist * c;
+  let pz = orbit.target.z + orbit.dist * s * Math.cos(orbit.theta);
+  if (epic.shake > 0.001) { const a = epic.shake * 3; px += (Math.random() - 0.5) * a; py += (Math.random() - 0.5) * a; pz += (Math.random() - 0.5) * a; epic.shake = Math.max(0, epic.shake - dt * 0.6); }
+  camera.position.set(px, py, pz); camera.lookAt(orbit.target);
+}
+function buildMeteor() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(3, 16, 16), new THREE.MeshBasicMaterial({ color: 0xfff6d8 })));
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(5.2, 16, 16), new THREE.MeshBasicMaterial({ color: 0xff9a44, transparent: true, opacity: 0.45 })));
+  const dir = METEOR_START.clone().sub(METEOR_HIT).normalize();
+  const trail = new THREE.Mesh(new THREE.ConeGeometry(3.2, 30, 14), new THREE.MeshBasicMaterial({ color: 0xff7a2a, transparent: true, opacity: 0.5 }));
+  trail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir); trail.position.copy(dir.clone().multiplyScalar(15));
+  g.add(trail);
+  const light = new THREE.PointLight(0xff8030, 4, 400); g.add(light);
+  g.position.copy(METEOR_START);
+  return g;
+}
+function buildFireball() {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(12, 20, 20), new THREE.MeshBasicMaterial({ color: 0xff6a1e, transparent: true, opacity: 0.9 }));
+  m.position.copy(METEOR_HIT); return m;
+}
+function buildAsh() {
+  const N = 900, pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) { pos[i * 3] = (Math.random() - 0.5) * 320; pos[i * 3 + 1] = Math.random() * 120; pos[i * 3 + 2] = (Math.random() - 0.5) * 320; }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x5a544c, size: 0.9, transparent: true, opacity: 0.75 }));
 }
 
 /* ---------------- 標籤投影 ---------------- */
@@ -496,8 +731,11 @@ function tick(now) {
 
   if (state.timeFlow) { state.time = (state.time + dt * 0.6) % 24; applyTime(state.time); }
 
-  animateDinos(elapsed);
-  if (state.view === 'overview') updateOverviewCamera(dt); else updateWalkCamera(dt);
+  if (epic.active) updateEpic(dt);
+  updateHerd(dt);          // 陸生恐龍自主行為
+  animateFlyers(elapsed);  // 翼龍飛行
+  if (epic.active) updateEpicCamera(dt);
+  else if (state.view === 'overview') updateOverviewCamera(dt); else if (state.view === 'walk') updateWalkCamera(dt);
 
   // 水面微動。
   if (worldRefs?.water) worldRefs.water.position.y = WORLD.waterLevel + Math.sin(elapsed * 0.6) * 0.05;
@@ -541,6 +779,8 @@ function exposeTestAPI() {
     visibleDinos() { return dinos.filter((d) => d.root.visible).map((d) => d.sp.id); },
     setTime(h) { applyTime(h); },
     tour: { start: startTour, step: stepTour, end: endTour, index: () => state.tourIndex },
+    epic: { start: startEpic, end: endEpic, jump(sec) { epic.t = sec; }, info: () => ({ active: epic.active, t: +epic.t.toFixed(1), stage: epic.stage, skyFall: epic.skyFall }) },
+    minds: () => dinos.filter((d) => d.root.visible).map((d) => ({ id: d.sp.id, ai: d.mind.ai, x: +d.mind.x.toFixed(1), z: +d.mind.z.toFixed(1), sp: +d.mind.speed.toFixed(1) })),
     // 回傳畫面像素統計(同一 task 內 render→readPixels)。
     sample() {
       renderer.render(scene, camera);
