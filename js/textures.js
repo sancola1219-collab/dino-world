@@ -100,23 +100,25 @@ export function makeSkinTexture(baseHex, accentHex, seed = 1, scaly = true) {
   ctx.putImageData(img, 0, 0);
 
   // 法線貼圖:由「鱗片/皺褶」高度場推導,讓體表在光下有立體微結構(更細膩)。
-  const { canvas: ncanvas, ctx: nctx } = makeCanvas(S, S);
-  const nimg = nctx.createImageData(S, S);
+  // 用較小解析度(256)以省 GPU 記憶體——這台機器記憶體壓力大時 WebGL context 會整個丟失。
+  const NS = 256;
+  const { canvas: ncanvas, ctx: nctx } = makeCanvas(NS, NS);
+  const nimg = nctx.createImageData(NS, NS);
   const nd = nimg.data;
   const H = (xx, yy) => {
-    const u = xx / S, v = yy / S;
+    const u = xx / NS, v = yy / NS;
     const scaleN = scaly ? noise2(u * 90, v * 90, seed + 7) : fbm(u * 22, v * 22, 3, seed);
     const wrinkle = fbm(u * 10, v * 10, 3, seed + 4) * 0.4;
     return scaleN * 0.7 + wrinkle;
   };
   const strength = scaly ? 2.2 : 1.4;
-  for (let y = 0; y < S; y++) {
-    for (let x = 0; x < S; x++) {
-      const hl = H((x - 1 + S) % S, y), hr = H((x + 1) % S, y);
-      const hu = H(x, (y - 1 + S) % S), hd = H(x, (y + 1) % S);
+  for (let y = 0; y < NS; y++) {
+    for (let x = 0; x < NS; x++) {
+      const hl = H((x - 1 + NS) % NS, y), hr = H((x + 1) % NS, y);
+      const hu = H(x, (y - 1 + NS) % NS), hd = H(x, (y + 1) % NS);
       const nx = (hl - hr) * strength, ny = (hu - hd) * strength, nz = 1;
       const len = Math.hypot(nx, ny, nz);
-      const i = (y * S + x) * 4;
+      const i = (y * NS + x) * 4;
       nd[i] = (nx / len * 0.5 + 0.5) * 255;
       nd[i + 1] = (ny / len * 0.5 + 0.5) * 255;
       nd[i + 2] = (nz / len * 0.5 + 0.5) * 255;

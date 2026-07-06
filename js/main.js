@@ -54,6 +54,9 @@ async function init() {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.35;
   container.appendChild(renderer.domElement);
+  // WebGL context 遺失復原(這台機器已知會整個丟失 → 沒處理就永久黑畫面)。
+  renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); cancelAnimationFrame(rafId); clearInterval(watchdog); }, false);
+  renderer.domElement.addEventListener('webglcontextrestored', () => { try { applyTime(state.time); } catch (_) {} installDriver(); }, false);
 
   scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0xbcd3e6, 120, 340);
@@ -71,7 +74,7 @@ async function init() {
   // 光照。
   sun = new THREE.DirectionalLight(0xfff2d8, 1.5);
   sun.castShadow = true;
-  const shMap = state.settings.quality === 'high' ? 3072 : 1024;
+  const shMap = state.settings.quality === 'high' ? 2048 : 1024;   // 3072 太吃 GPU,這台機器易觸發 context 遺失
   sun.shadow.mapSize.set(shMap, shMap);
   sun.shadow.camera.near = 1; sun.shadow.camera.far = 400;
   const sc = sun.shadow.camera; sc.left = -120; sc.right = 120; sc.top = 120; sc.bottom = -120;
