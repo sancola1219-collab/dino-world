@@ -6,7 +6,7 @@
 //  2) 恐龍位置與姿態由 state.time(天內時刻)與各自的 wander 種子純函數決定,不做跨幀增量累加,
 //     所以任意暫停/拉時間軸都不會累積誤差。
 import * as THREE from 'three';
-import { SPECIES, SPECIES_BY_ID, TOUR, phaseOf } from './data.js';
+import { SPECIES, SPECIES_BY_ID, PERIODS, PERIOD_BY_ID, speciesOfPeriod, tourOf, phaseOf } from './data.js';
 import { buildWorld, buildSky, skyStateForHour, heightAt, WORLD } from './world.js';
 import { buildDino } from './dino.js';
 import * as UI from './ui.js';
@@ -14,6 +14,7 @@ import * as UI from './ui.js';
 /* ---------------- 狀態(唯一事實來源) ---------------- */
 const state = {
   view: 'overview',      // 'overview' | 'walk'
+  period: 'cretaceous',  // 'triassic' | 'jurassic' | 'cretaceous' — 目前年代(只顯示該年代恐龍)
   focus: null,           // 恐龍 id | null
   following: false,      // 遠觀時相機是否跟著聚焦恐龍
   time: 10.0,            // 0..24 一天的時刻
@@ -21,6 +22,7 @@ const state = {
   tourIndex: -1,         // -1 表示未在導覽
   settings: { labels: true, shadows: true, fog: true, quality: 'high' },
 };
+let periodMood = PERIOD_BY_ID.cretaceous.mood;   // 目前年代的環境氛圍(天色/植被/密度)
 
 let renderer, scene, camera, sky, worldRefs;
 let sun, ambient, hemi;
@@ -95,7 +97,7 @@ async function init() {
 
   bindInput();
   bindUI();
-  applyTime(state.time);
+  setPeriod(state.period, true);   // 設定初始年代:恐龍可見性、環境氛圍、介紹卡(內含 applyTime)
   sizeToContainer();
   ro.observe(container);
 
@@ -124,23 +126,58 @@ function makeLabel(sp) {
 function applyTime(hour) {
   state.time = hour;
   const s = skyStateForHour(hour);
-  sky.material.uniforms.top.value.copy(s.top);
-  sky.material.uniforms.bottom.value.copy(s.bottom);
-  sky.material.uniforms.horizon.value.copy(s.horizon);
-  sun.color.copy(s.sunColor); sun.intensity = s.sunIntensity;
+  // 疊上年代氛圍色調(乘算;白堊紀 tint=白=不變)。
+  const tint = new THREE.Color(periodMood.sky);
+  const top = s.top.clone().multiply(tint), bottom = s.bottom.clone().multiply(tint), horizon = s.horizon.clone().multiply(tint);
+  sky.material.uniforms.top.value.copy(top);
+  sky.material.uniforms.bottom.value.copy(bottom);
+  sky.material.uniforms.horizon.value.copy(horizon);
+  sun.color.copy(s.sunColor.clone().multiply(new THREE.Color(periodMood.sun))); sun.intensity = s.sunIntensity;
   ambient.color.copy(s.ambColor); ambient.intensity = s.ambIntensity;
   hemi.intensity = 0.35 + s.ambIntensity * 0.75;   // 提高天空/地面反照,讓恐龍陰影側不死黑、跳出植被
+  hemi.color.copy(horizon); hemi.groundColor.setHex(periodMood.hemiGround);
   const d = s.sunDir.clone().multiplyScalar(160);
   sun.position.set(d.x, Math.max(4, d.y), d.z);
-  if (scene.fog) { scene.fog.color.copy(s.horizon); }
-  renderer.setClearColor(s.horizon);
+  // 霧色:白天用年代霧色,夜晚壓暗成地平線色。
+  const fogC = horizon.clone().lerp(new THREE.Color(periodMood.fog), s.isNight ? 0 : 0.6);
+  if (scene.fog) { scene.fog.color.copy(fogC); }
+  renderer.setClearColor(fogC);
   UI.setClock(hour);
 }
 
+/* ---------------- 年代切換 ---------------- */
+// 切換地質年代:只顯示該年代的恐龍,換上該年代的環境氛圍與發展史介紹卡。
+function setPeriod(id, initial = false) {
+  const per = PERIOD_BY_ID[id];
+  if (!per) return;
+  state.period = id;
+  periodMood = per.mood;
+  // 恐龍可見性(狀態立即套用)。
+  dinos.forEach((d) => {
+    const vis = d.sp.period === id;
+    d.root.visible = vis;
+    d.label.style.display = (vis && state.settings.labels) ? '' : 'none';
+    if (!vis) d.label.classList.remove('show');
+  });
+  // 環境氛圍。
+  worldRefs.applyMood(per.mood);
+  applyTime(state.time);
+  // 清掉上一年代的聚焦/導覽。
+  state.focus = null; state.following = false; UI.hideInfo(); endTour();
+  UI.setBreadcrumb(`${per.name} · ${per.tagline}`);
+  UI.setActivePeriod(id);
+  UI.rebuildDex(id, (spid) => focusDino(spid));
+  // 發展史介紹卡:使用者主動切年代時彈出(初始載入已有歡迎頁,不重複打擾)。
+  if (!initial) { UI.showPeriodIntro(per, speciesOfPeriod(id), (spid) => focusDino(spid)); resetCamera(); }
+}
+
 /* ---------------- 聚焦一隻恐龍 ---------------- */
+function periodBreadcrumb() { const p = PERIOD_BY_ID[state.period]; return `${p.name} · ${p.tagline}`; }
+
 function focusDino(id) {
   const sp = SPECIES_BY_ID[id];
   if (!sp) return;
+  if (sp.period !== state.period) setPeriod(sp.period);   // 跨年代點選 → 先切到該年代
   state.focus = id;                       // 狀態立即改變
   state.following = false;
   UI.showInfo(sp, state.following, () => toggleFollow());
@@ -151,7 +188,7 @@ function focusDino(id) {
     const target = d.root.position.clone().add(new THREE.Vector3(0, sp.heightM * 0.5, 0));
     // 依體型決定距離,讓恐龍約佔畫面 60% 高。特徵尺寸取身高與體長折衷。
     const char = Math.max(sp.heightM * 1.1, sp.lengthM * 0.55);
-    const dist = clamp(char * 1.9, 8, 70);
+    const dist = clamp(char * 1.9, 5, 70);   // 下限放小,讓迷你恐龍(始盜龍等)也框得夠近
     startFly(target, dist, 1.42, sp.spawn.rot + 2.3);    // 低角度近水平、從側前方看剪影
   }
 }
@@ -161,7 +198,7 @@ function toggleFollow() {
 }
 function closeInfo() {
   state.focus = null; state.following = false;
-  UI.hideInfo(); UI.setBreadcrumb('白堊紀晚期 · 谷地');
+  UI.hideInfo(); UI.setBreadcrumb(periodBreadcrumb());
 }
 
 // 相機飛行:補間 目標點、距離,可選補間 phi(俯仰)/theta(方位)。角度省略時維持現值。
@@ -194,7 +231,7 @@ function enterWalk() {
 function exitWalk() {
   state.view = 'overview';
   UI.setActiveView('overview'); UI.setWalkHUD(false); UI.showResumeTip(false);
-  UI.setBreadcrumb(state.focus ? `${SPECIES_BY_ID[state.focus].name}` : '白堊紀晚期 · 谷地');
+  UI.setBreadcrumb(state.focus ? `${SPECIES_BY_ID[state.focus].name}` : periodBreadcrumb());
   if (document.pointerLockElement) document.exitPointerLock();
 }
 
@@ -272,7 +309,7 @@ function pickAt(cx, cy) {
   pointer.x = ((cx - r.left) / r.width) * 2 - 1;
   pointer.y = -((cy - r.top) / r.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const roots = dinos.map((d) => d.root);
+  const roots = dinos.filter((d) => d.root.visible).map((d) => d.root);
   const hits = raycaster.intersectObjects(roots, true);
   if (hits.length) {
     let o = hits[0].object;
@@ -283,10 +320,12 @@ function pickAt(cx, cy) {
 
 function bindUI() {
   UI.initUI({
+    periods: PERIODS,
+    onPeriod: (id) => setPeriod(id),
     onView: setView,
     onToggleDex: () => UI.toggleDex(),
     onTour: startTour,
-    onFocus: (id) => { UI.openDex(); focusDino(id); },
+    onFocus: (id) => focusDino(id),
     onCloseInfo: closeInfo,
     onTourStep: stepTour,
     onTourExit: endTour,
@@ -301,24 +340,27 @@ function applySetting(key, val) {
   state.settings[key] = val;
   if (key === 'shadows') renderer.shadowMap.enabled = val;
   if (key === 'fog') scene.fog = val ? new THREE.Fog(scene.fog?.color || 0xbcd3e6, 120, 340) : null;
-  if (key === 'labels') dinos.forEach((d) => { d.label.style.display = val ? '' : 'none'; });
+  if (key === 'labels') dinos.forEach((d) => { d.label.style.display = (val && d.root.visible) ? '' : 'none'; });
   if (key === 'quality') {
     renderer.setPixelRatio(Math.min(devicePixelRatio, val === 'high' ? 2 : 1));
   }
   applyTime(state.time);
 }
 
-/* ---------------- 生態導覽 ---------------- */
+/* ---------------- 生態導覽(依目前年代動態產生) ---------------- */
+function currentTour() { return tourOf(state.period); }
 function startTour() { state.tourIndex = 0; showTourStep(); }
 function stepTour(delta) {
-  state.tourIndex = clamp(state.tourIndex + delta, 0, TOUR.length - 1);
+  const tour = currentTour();
+  state.tourIndex = clamp(state.tourIndex + delta, 0, tour.length - 1);
   showTourStep();
 }
 function showTourStep() {
-  const stop = TOUR[state.tourIndex];
+  const tour = currentTour();
+  const stop = tour[state.tourIndex];
   const sp = SPECIES_BY_ID[stop.id];
   focusDino(sp.id);
-  UI.showTour(state.tourIndex, TOUR.length, sp, stop.text);
+  UI.showTour(state.tourIndex, tour.length, sp, stop.text);
 }
 function endTour() { state.tourIndex = -1; UI.hideTour(); }
 
@@ -378,6 +420,7 @@ function updateWalkCamera(dt) {
 /* ---------------- 恐龍動畫(裝飾層,可被節流不影響狀態) ---------------- */
 function animateDinos(elapsed) {
   for (const d of dinos) {
+    if (!d.root.visible) continue;   // 只動目前年代的恐龍
     const parts = d.root.userData.parts;
     const sp = d.sp;
     const t = elapsed + d.phase;
@@ -414,6 +457,7 @@ function updateLabels() {
   }
   const w = container.clientWidth, h = container.clientHeight;
   for (const d of dinos) {
+    if (!d.root.visible) { d.label.classList.remove('show'); continue; }
     const p = d.root.position.clone().add(new THREE.Vector3(0, d.sp.heightM + 1, 0));
     p.project(camera);
     const visible = p.z < 1 && p.x > -1.1 && p.x < 1.1 && p.y > -1.1 && p.y < 1.1;
@@ -492,6 +536,9 @@ function exposeTestAPI() {
     step(ms = 16) { tick(lastTick + ms); },        // 假時鐘推進一幀
     focus(id) { focusDino(id); },
     setView,
+    setPeriod(id) { setPeriod(id); },
+    period() { return state.period; },
+    visibleDinos() { return dinos.filter((d) => d.root.visible).map((d) => d.sp.id); },
     setTime(h) { applyTime(h); },
     tour: { start: startTour, step: stepTour, end: endTour, index: () => state.tourIndex },
     // 回傳畫面像素統計(同一 task 內 render→readPixels)。

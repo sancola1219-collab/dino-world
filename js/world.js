@@ -67,13 +67,23 @@ export function buildWorld(scene, quality) {
 
   // ---- 植被 ----
   const veg = buildVegetation(quality);
-  group.add(veg);
+  group.add(veg.group);
 
   // ---- 遠景岩層 ----
   group.add(buildRocks(quality));
 
   scene.add(group);
-  return { group, ground, water, waterMat };
+
+  const refs = { group, ground, groundMat, water, waterMat, veg };
+  // 依年代氛圍調整:地表/植被色調(material.color 乘算,白=不變)、樹木密度。
+  refs.applyMood = (mood) => {
+    groundMat.color.setHex(mood.ground);
+    veg.leafMats.forEach((m) => m.color.setHex(mood.foliage));
+    veg.fernMat.color.setHex(mood.foliage);
+    for (const im of veg.trees) im.count = Math.round(veg.treeFull * mood.treeRatio);
+    veg.ferns.count = Math.round(veg.fernFull * Math.max(0.5, mood.treeRatio));
+  };
+  return refs;
 }
 
 function buildVegetation(quality) {
@@ -147,7 +157,13 @@ function buildVegetation(quality) {
   ferns.count = fp; ferns.instanceMatrix.needsUpdate = true;
   g.add(ferns);
 
-  return g;
+  // 回傳材質與 instanced 參考,供 applyMood 依年代改色調與密度。
+  return {
+    group: g,
+    leafMats: [leafMat, leafMat2], fernMat,
+    trees: [trunkMeshes, leavesA, leavesB], treeFull: placed,
+    ferns, fernFull: fp,
+  };
 }
 
 // 三片交叉的面(billboard 替代),回傳合併幾何。

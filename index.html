@@ -35,6 +35,26 @@
   </nav>
 </header>
 
+<!-- 年代切換列 -->
+<div id="periodBar"></div>
+
+<!-- 年代發展史介紹卡 -->
+<div id="periodIntro">
+  <div class="piCard">
+    <button id="periodIntroClose" title="進入這個年代">✕</button>
+    <div class="piHead">
+      <div class="piEn" id="piEn"></div>
+      <h2 id="piName"></h2>
+      <div class="piYears" id="piYears"></div>
+      <div class="piTagline" id="piTagline"></div>
+    </div>
+    <p class="piHistory" id="piHistory"></p>
+    <div class="piSpeciesLabel">這個年代的恐龍</div>
+    <div class="piSpecies" id="piSpecies"></div>
+    <button class="piEnter" onclick="document.getElementById('periodIntro').classList.remove('open')">進入谷地探索 →</button>
+  </div>
+</div>
+
 <!-- 左側圖鑑 -->
 <aside id="dexPanel">
   <div class="dexHead"><h3>物種圖鑑</h3><button id="dexClose" title="關閉">✕</button></div>
@@ -105,6 +125,7 @@
     <h2>歡迎來到恐龍世界</h2>
     <p class="helpSub">一座可以遠觀谷地、走近恐龍的互動白堊紀教室</p>
     <ul>
+      <li>頂端切換 <b>三疊紀 / 侏羅紀 / 白堊紀</b> — 每個年代有不同的恐龍、環境與發展史</li>
       <li><b>遠觀</b>:拖曳旋轉、滾輪縮放,俯瞰整座谷地的生態</li>
       <li><b>點擊恐龍</b>(或牠的標籤)開啟教學資料卡,並可切換「跟隨視角」</li>
       <li><b>漫遊</b>:第一人稱走進谷地 — <b>W A S D</b> 移動、<b>Shift</b> 奔跑、滑鼠環顧、<b>1</b> 返回遠觀</li>

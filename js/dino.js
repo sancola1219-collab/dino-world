@@ -41,6 +41,9 @@ export function buildDino(sp) {
     case 'theropod': model = theropod(sp, mat); break;
     case 'raptor': model = raptor(sp, mat); break;
     case 'sauropod': model = sauropod(sp, mat); break;
+    case 'diplodocid': model = sauropod(sp, mat, { horizontal: true }); break;
+    case 'prosauropod': model = prosauropod(sp, mat); break;
+    case 'earlytheropod': model = earlytheropod(sp, mat); break;
     case 'ceratopsian': model = ceratopsian(sp, mat); break;
     case 'stegosaur': model = stegosaur(sp, mat); break;
     case 'hadrosaur': model = hadrosaur(sp, mat); break;
@@ -143,41 +146,111 @@ function raptor(sp, mat) {
   return g;
 }
 
-function sauropod(sp, mat) {
+// sauropod:腕龍式(頸向上前伸、肩高於臀)。opts.horizontal=true → 梁龍式(頸水平前伸、背平、超長鞭尾)。
+function sauropod(sp, mat, opts = {}) {
+  const horiz = !!opts.horizontal;
   const g = new THREE.Group();
   const parts = { legs: [], neck: null, tail: null };
   const hipY = 6.5;
-  const body = capsule(mat, 3.0, 5.5); body.rotation.z = Math.PI / 2; body.position.set(0, hipY, 0); g.add(body);
-  const shoulder = sphere(mat, 3.2); shoulder.position.set(3.6, hipY + 1.2, 0); g.add(shoulder); // 腕龍肩高於臀
-  // 長頸(多節,向上前伸)。
-  const neck = new THREE.Group(); neck.position.set(5.5, hipY + 2.5, 0);
+  const body = capsule(mat, horiz ? 2.4 : 3.0, horiz ? 6.5 : 5.5); body.rotation.z = Math.PI / 2; body.position.set(0, hipY, 0); g.add(body);
+  // 肩:腕龍高聳,梁龍與背同高。
+  const shoulder = sphere(mat, horiz ? 2.5 : 3.2); shoulder.position.set(3.6, hipY + (horiz ? 0.2 : 1.2), 0); g.add(shoulder);
+  // 頸(多節)。橫向 vs 向上。
+  const neck = new THREE.Group(); neck.position.set(horiz ? 5.2 : 5.5, hipY + (horiz ? 0.6 : 2.5), 0);
   let seg = neck; const neckSegs = [];
-  for (let i = 0; i < 6; i++) {
-    const s = new THREE.Group(); s.position.set(i === 0 ? 0 : 1.3, i === 0 ? 0 : 1.0, 0);
-    const nm = capsule(mat, 1.1 - i * 0.12, 1.6); nm.rotation.z = -0.8; nm.position.set(0.6, 0.8, 0); s.add(nm);
+  const nSegN = horiz ? 7 : 6;
+  for (let i = 0; i < nSegN; i++) {
+    const s = new THREE.Group();
+    s.position.set(i === 0 ? 0 : (horiz ? 1.7 : 1.3), i === 0 ? 0 : (horiz ? 0.1 : 1.0), 0);
+    const nm = capsule(mat, (horiz ? 0.85 : 1.1) - i * (horiz ? 0.08 : 0.12), horiz ? 1.7 : 1.6);
+    nm.rotation.z = horiz ? -0.05 : -0.8; nm.position.set(horiz ? 0.9 : 0.6, horiz ? 0.05 : 0.8, 0); s.add(nm);
     seg.add(s); seg = s; neckSegs.push(s);
   }
-  const head = sphere(mat, 0.9); head.scale.set(1.4, 0.9, 0.9); head.position.set(0.9, 1.0, 0); seg.add(head);
-  const crest = sphere(mat, 0.5); crest.position.set(0.6, 1.6, 0); seg.add(crest); // 腕龍鼻脊
+  const head = sphere(mat, horiz ? 0.7 : 0.9); head.scale.set(1.5, 0.8, 0.85); head.position.set(horiz ? 1.0 : 0.9, horiz ? 0.0 : 1.0, 0); seg.add(head);
+  if (!horiz) { const crest = sphere(mat, 0.5); crest.position.set(0.6, 1.6, 0); seg.add(crest); } // 腕龍鼻脊
   g.add(neck); parts.neck = neck; parts.neckSegs = neckSegs;
-  // 長尾。
+  // 尾。梁龍更長、更細、鞭狀。
   const tail = new THREE.Group(); tail.position.set(-3.5, hipY, 0);
-  let tseg = tail; const tailSegs = []; let tr = 2.2;
-  for (let i = 0; i < 6; i++) {
-    const s = new THREE.Group(); s.position.set(i === 0 ? 0 : -1.8, 0, 0);
-    const tm = capsule(mat, tr, 1.8); tm.rotation.z = Math.PI / 2; tm.position.x = -1.0; s.add(tm);
-    tseg.add(s); tseg = s; tailSegs.push(s); tr *= 0.72;
+  let tseg = tail; const tailSegs = []; let tr = horiz ? 1.8 : 2.2;
+  const tSegN = horiz ? 9 : 6;
+  for (let i = 0; i < tSegN; i++) {
+    const s = new THREE.Group(); s.position.set(i === 0 ? 0 : (horiz ? -2.0 : -1.8), 0, 0);
+    const tm = capsule(mat, tr, horiz ? 2.0 : 1.8); tm.rotation.z = Math.PI / 2; tm.position.x = -1.0; s.add(tm);
+    tseg.add(s); tseg = s; tailSegs.push(s); tr *= horiz ? 0.68 : 0.72;
   }
   g.add(tail); parts.tail = tail; parts.tailSegs = tailSegs;
   // 四柱腿。
   for (const sx of [1, -1]) for (const zx of [1, -1]) {
-    const leg = buildLeg(mat, 3.4, 3.0, 1.8, 1.1);
+    const leg = buildLeg(mat, 3.4, 3.0, 1.8, horiz ? 0.95 : 1.1);
     leg.group.position.set(sx > 0 ? 3.2 : -3.0, hipY, zx * 2.2);
     g.add(leg.group); parts.legs.push(leg);
   }
-  const scale = sp.heightM / 12;
+  // 腕龍以身高定標;梁龍長而矮,以體長定標才不會過小。
+  const scale = horiz ? sp.lengthM / 30 : sp.heightM / 12;
   g.scale.setScalar(scale);
   g.userData.parts = parts; g.userData.hipY = hipY * scale; g.userData.quadruped = true;
+  return g;
+}
+
+// 原蜥腳類(板龍):中等體型植食者,頸比蜥腳類短、可半直立,拇指有爪。
+function prosauropod(sp, mat) {
+  const g = new THREE.Group();
+  const parts = { legs: [], neck: null, tail: null };
+  const hipY = 2.8;
+  const body = capsule(mat, 1.3, 2.6); body.rotation.z = Math.PI / 2; body.position.set(0, hipY, 0); g.add(body);
+  // 頸(中長,向上前伸)。
+  const neck = new THREE.Group(); neck.position.set(2.2, hipY + 0.7, 0);
+  let seg = neck; const neckSegs = [];
+  for (let i = 0; i < 4; i++) {
+    const s = new THREE.Group(); s.position.set(i === 0 ? 0 : 0.7, i === 0 ? 0 : 0.5, 0);
+    const nm = capsule(mat, 0.5 - i * 0.06, 0.8); nm.rotation.z = -0.7; nm.position.set(0.3, 0.4, 0); s.add(nm);
+    seg.add(s); seg = s; neckSegs.push(s);
+  }
+  const head = box(mat, 0.9, 0.5, 0.5); head.position.set(0.5, 0.5, 0); seg.add(head);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x140d08 });
+  const e = sphere(eyeMat, 0.06, 8); e.position.set(0.55, 0.6, 0.2); seg.add(e); const e2 = e.clone(); e2.position.z = -0.2; seg.add(e2);
+  g.add(neck); parts.neck = neck; parts.neckSegs = neckSegs;
+  // 尾。
+  const tail = new THREE.Group(); tail.position.set(-1.5, hipY, 0);
+  let tseg = tail; const tailSegs = []; let tr = 0.9;
+  for (let i = 0; i < 4; i++) { const s = new THREE.Group(); s.position.set(i === 0 ? 0 : -1.2, 0, 0); const tm = capsule(mat, tr, 1.2); tm.rotation.z = Math.PI / 2; tm.position.x = -0.7; s.add(tm); tseg.add(s); tseg = s; tailSegs.push(s); tr *= 0.7; }
+  g.add(tail); parts.tail = tail; parts.tailSegs = tailSegs;
+  // 後腿粗、前肢短(可四足也可半直立),拇指大爪。
+  for (const s of [1, -1]) { const leg = buildLeg(mat, 1.5, 1.2, 0.8, 0.42); leg.group.position.set(-0.2, hipY, s * 0.8); g.add(leg.group); parts.legs.push(leg); }
+  const clawMat = new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 0.5 });
+  for (const s of [1, -1]) {
+    const arm = capsule(mat, 0.24, 0.9); arm.position.set(1.7, hipY - 0.5, s * 0.6); arm.rotation.z = 0.5; g.add(arm);
+    const claw = cone(clawMat, 0.08, 0.35); claw.position.set(2.1, hipY - 1.1, s * 0.6); claw.rotation.z = 0.8; g.add(claw);
+  }
+  const scale = sp.heightM / 3.5;
+  g.scale.setScalar(scale);
+  g.userData.parts = parts; g.userData.hipY = hipY * scale;
+  return g;
+}
+
+// 早期小型獸腳類(始盜龍/腔骨龍):纖細雙足、長尾、小頭、無羽。
+function earlytheropod(sp, mat) {
+  const g = new THREE.Group();
+  const parts = { legs: [], neck: null, tail: null };
+  const hipY = 1.3;
+  const body = capsule(mat, 0.32, 1.1); body.rotation.z = Math.PI / 2; body.position.set(0, hipY, 0); g.add(body);
+  const neck = new THREE.Group(); neck.position.set(0.9, hipY + 0.25, 0);
+  const nm = capsule(mat, 0.16, 0.5); nm.rotation.z = 0.9; nm.position.set(0.2, 0.3, 0); neck.add(nm);
+  const head = new THREE.Group(); head.position.set(0.4, 0.55, 0);
+  const skull = box(mat, 0.5, 0.24, 0.22); skull.position.x = 0.2; head.add(skull);
+  const snout = cone(mat, 0.11, 0.4); snout.rotation.z = -Math.PI / 2; snout.position.set(0.5, -0.02, 0); head.add(snout);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x120c08 });
+  const e = sphere(eyeMat, 0.045, 8); e.position.set(0.18, 0.08, 0.12); head.add(e); const e2 = e.clone(); e2.position.z = -0.12; head.add(e2);
+  neck.add(head); g.add(neck); parts.neck = neck;
+  // 長尾(平衡)。
+  const tail = new THREE.Group(); tail.position.set(-0.6, hipY, 0);
+  const tm = capsule(mat, 0.2, 1.9); tm.rotation.z = Math.PI / 2 - 0.12; tm.position.set(-1.0, -0.1, 0); tail.add(tm); g.add(tail); parts.tail = tail;
+  // 小前肢。
+  for (const s of [1, -1]) { const arm = capsule(mat, 0.08, 0.4); arm.position.set(0.55, hipY - 0.1, s * 0.28); arm.rotation.z = 0.7; g.add(arm); }
+  for (const s of [1, -1]) { const leg = buildLeg(mat, 0.65, 0.6, 0.42, 0.16); leg.group.position.set(0, hipY, s * 0.28); g.add(leg.group); parts.legs.push(leg); }
+  const scale = Math.max(1, sp.heightM / 0.9);
+  g.scale.setScalar(scale);
+  g.userData.parts = parts; g.userData.hipY = hipY * scale;
   return g;
 }
 

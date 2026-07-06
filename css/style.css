@@ -189,6 +189,41 @@ body.walking #crosshair{display:block}
 #fade{position:fixed;inset:0;z-index:70;background:#000;opacity:0;pointer-events:none;transition:opacity .5s}
 #fade.on{opacity:1}
 
+/* 年代切換列 */
+#periodBar{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:28;display:flex;gap:4px;
+  padding:5px;border:1px solid var(--stroke);border-radius:40px;background:var(--panel);backdrop-filter:blur(18px);box-shadow:var(--shadow)}
+.periodBtn{display:flex;flex-direction:column;align-items:center;gap:1px;background:transparent;border:none;border-radius:30px;
+  padding:7px 20px;cursor:pointer;color:var(--text-dim);transition:background .25s,color .25s;min-width:96px}
+.periodBtn .pName{font-family:var(--serif);font-size:15px;letter-spacing:0.1em}
+.periodBtn .pYears{font-size:9.5px;letter-spacing:0.08em;opacity:0.7}
+.periodBtn:hover{color:var(--text)}
+.periodBtn.active{background:linear-gradient(180deg,rgba(201,163,92,0.22),rgba(201,163,92,0.08));color:var(--gold-bright)}
+.periodBtn.active .pName{color:var(--gold-bright)}
+body.walking #periodBar{opacity:0.2;pointer-events:none}
+
+/* 年代發展史介紹卡 */
+#periodIntro{position:fixed;inset:0;z-index:58;display:none;align-items:center;justify-content:center;
+  background:rgba(6,7,6,0.72);backdrop-filter:blur(7px)}
+#periodIntro.open{display:flex}
+.piCard{position:relative;width:600px;max-width:92vw;max-height:88vh;overflow-y:auto;border:1px solid var(--stroke);
+  border-radius:16px;background:var(--panel-solid);padding:38px 42px 32px;box-shadow:var(--shadow)}
+#periodIntroClose{position:absolute;top:16px;right:16px;background:transparent;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;transition:color .2s}
+#periodIntroClose:hover{color:var(--gold)}
+.piHead{border-bottom:1px solid var(--stroke-soft);padding-bottom:18px;margin-bottom:20px}
+.piEn{font-size:11px;letter-spacing:0.4em;color:var(--gold);margin-bottom:6px}
+.piHead h2{font-family:var(--serif);font-weight:500;font-size:34px;letter-spacing:0.1em;margin-bottom:6px}
+.piYears{font-size:13px;color:var(--text-dim);letter-spacing:0.1em}
+.piTagline{margin-top:10px;font-family:var(--serif);font-size:17px;color:var(--gold-bright);letter-spacing:0.08em}
+.piHistory{font-size:14px;line-height:2;color:var(--text);margin-bottom:24px;text-align:justify}
+.piSpeciesLabel{font-size:11px;letter-spacing:0.16em;color:var(--gold);margin-bottom:12px}
+.piSpecies{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:26px}
+.piChip{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,0.04);border:1px solid var(--stroke-soft);
+  border-radius:24px;padding:7px 15px;cursor:pointer;color:var(--text);font-size:13.5px;transition:border-color .2s,background .2s}
+.piChip:hover{border-color:var(--gold);background:rgba(201,163,92,0.1)}
+.piEnter{width:100%;padding:13px;background:var(--gold);color:#1a1408;border:none;border-radius:8px;
+  font-family:var(--sans);font-size:13.5px;letter-spacing:0.12em;cursor:pointer;transition:background .2s}
+.piEnter:hover{background:var(--gold-bright)}
+
 @media(max-width:640px){
   #topbar{height:54px;padding:0 12px}
   #brand h1{font-size:18px}

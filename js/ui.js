@@ -1,9 +1,13 @@
 // ui.js — 全部 DOM 介面。只反映狀態 + 發出回呼,不持有任何遊戲邏輯。
-import { SPECIES, SPECIES_BY_ID, phaseOf } from './data.js';
+import { SPECIES, SPECIES_BY_ID, speciesOfPeriod, phaseOf } from './data.js';
 
 const $ = (id) => document.getElementById(id);
 
 export function initUI(handlers) {
+  // 年代切換列。
+  buildPeriodBar(handlers.periods, handlers.onPeriod);
+  $('periodIntroClose').onclick = () => hide('periodIntro');
+
   // 頂欄導覽。
   $('navOverview').onclick = () => handlers.onView('overview');
   $('navWalk').onclick = () => handlers.onView('walk');
@@ -35,19 +39,52 @@ export function initUI(handlers) {
 
   // 說明。
   $('helpClose').onclick = () => hide('helpOverlay');
-
-  buildDex(handlers.onFocus);
 }
 
 function toggle(id) { $(id).classList.toggle('open'); }
 function hide(id) { $(id).classList.remove('open'); }
 function show(id) { $(id).classList.add('open'); }
 
-// 建左側圖鑑清單。
-function buildDex(onFocus) {
+// 建年代切換列(三疊紀/侏羅紀/白堊紀)。
+function buildPeriodBar(periods, onPeriod) {
+  const bar = $('periodBar');
+  bar.innerHTML = '';
+  for (const p of periods) {
+    const btn = document.createElement('button');
+    btn.className = 'periodBtn'; btn.dataset.period = p.id;
+    btn.innerHTML = `<span class="pName">${p.name}</span><span class="pYears">${p.years}</span>`;
+    btn.onclick = () => onPeriod(p.id);
+    bar.appendChild(btn);
+  }
+}
+// 高亮目前年代。
+export function setActivePeriod(id) {
+  document.querySelectorAll('#periodBar .periodBtn').forEach((b) => b.classList.toggle('active', b.dataset.period === id));
+}
+
+// 年代發展史介紹卡(切換年代時彈出)。
+export function showPeriodIntro(per, species, onFocus) {
+  $('piName').textContent = per.name;
+  $('piEn').textContent = per.en;
+  $('piYears').textContent = per.years;
+  $('piTagline').textContent = per.tagline;
+  $('piHistory').textContent = per.history;
+  const chips = species.map((sp) => {
+    const cls = sp.diet === 'carn' ? 'carn' : 'herb';
+    return `<button class="piChip ${cls}" data-id="${sp.id}"><span class="dexDot ${cls}"></span>${sp.name}</button>`;
+  }).join('');
+  $('piSpecies').innerHTML = chips;
+  $('piSpecies').querySelectorAll('.piChip').forEach((c) => {
+    c.onclick = () => { hide('periodIntro'); onFocus(c.dataset.id); };
+  });
+  show('periodIntro');
+}
+
+// 左側圖鑑:只列目前年代的物種。
+export function rebuildDex(periodId, onFocus) {
   const list = $('dexList');
   list.innerHTML = '';
-  for (const sp of SPECIES) {
+  for (const sp of speciesOfPeriod(periodId)) {
     const row = document.createElement('button');
     row.className = 'dexRow';
     const dietTag = sp.diet === 'carn' ? '肉食' : sp.diet === 'herb' ? '植食' : '雜食';
