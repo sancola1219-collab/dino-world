@@ -1,0 +1,185 @@
+# 恐龍世界 — 交接指南(HANDOFF)
+
+> 給下一個接手的 AI 模型(Codex / Claude Code / 其他)或人類開發者。
+> **先讀完這份,再動任何程式碼。** 本文件是唯一完整的交接入口;
+> 根目錄的 `CLAUDE.md` 與 `AGENTS.md` 只是指向這裡的精簡摘要。
+
+最後更新:2026-07-06(由 Claude Opus 4.8 建立專案並完成第一版)
+
+---
+
+## 0. 為什麼有這份文件(重要背景)
+
+建立者(Fable 5 / Opus 4.8)之後可能無法再被叫用。這個專案刻意做成
+**任何模型都能無縫接手**:純前端、零依賴、零建置、所有知識集中在幾個檔案、
+測試不靠截圖而靠可重跑的 `__DW` API。你(接手者)只要讀這份 + 跑一次 §2 的驗證腳本,
+就掌握全部。改完照 §7 的守則、更新 §2 的紀錄即可。
+
+---
+
+## 1. 這是什麼
+
+「恐龍世界」是一個**純前端**的寫實恐龍生態互動教學模擬器(繁體中文介面):
+
+- **兩種視角**:遠觀(軌道相機俯瞰整座白堊紀谷地)→ 漫遊(第一人稱走進谷地,WASD+滑鼠環顧)
+- **八種恐龍**:暴龍、三角龍、腕龍、伶盜龍、劍龍、副櫛龍、甲龍、風神翼龍;每種有程序化 3D 模型 + 完整中文教學資料卡(尺寸、年代、化石產地、重點、趣聞、與人類比例條)
+- **時間系統**:0–24 時滑桿,天色/太陽方向/光強即時變化(黎明、正午、黃昏、星夜);可自動流動
+- **教學功能**:左側物種圖鑑、右側資料卡、「生態導覽」8 站巡禮
+- **谷地生態**:程序化地形(環山盆地+下切河谷)、河流、針葉林(instanced)、蕨叢地被、外緣岩層
+
+技術:Three.js r160(已 vendor 到 `vendor/`,**無 npm、無打包器、無外部資產**)。
+所有貼圖(地表、皮膚、樹冠、樹皮、天空)都是載入時用 Canvas / shader 程序化生成,整個 repo 沒有任何圖片檔。
+
+---
+
+## 2. 如何執行與測試
+
+```
+node tools/serve.mjs 8124     # 零依賴靜態伺服器
+# 瀏覽器開 http://localhost:8124/
+```
+
+(或用 Claude Code 的 preview:`.claude/launch.json` 已設定 `dino-world`。)
+
+### 測試 API(接手者一定要懂)
+
+這台機器的預覽瀏覽器**常是 hidden**(`document.hidden===true`):
+rAF 停擺、鏈式計時器被節流、**截圖必逾時**(已實測 30s timeout)。
+所以 `main.js` 暴露了 `window.__DW` 除錯 API,**驗證一律走同步模擬 + 像素取樣,不要依賴截圖**:
+
+```js
+const DW = window.__DW;
+DW.forceSize(1280, 800);          // hidden 下容器可能 0×0,先強制尺寸
+DW.setTime(9);                    // 設定時刻(0..24),光照立即套用
+for (let i=0;i<60;i++) DW.step(16);  // 假時鐘同步推進 60 幀(不受計時器節流)
+DW.focus('trex');                 // 聚焦暴龍(狀態立即改變、相機開始飛)
+for (let i=0;i<90;i++) DW.step(16);
+DW.sample();  // → {avg:[r,g,b], brightRatio, w, h}  同一 task 內 render→readPixels
+DW.counts();  // → {dinos:8, labelsShown:N}
+```
+
+**驗證判準(第一版實測基線,供回歸比對):**
+- 載入後 `DW.counts().dinos === 8`
+- `DW.setTime(13)`(正午)的 `sample().brightRatio` 明顯 > `DW.setTime(2)`(深夜,近 0)
+- 聚焦任一恐龍後 `state.focus` 改變、資訊面板 `#infoPanel.open`、麵包屑更新
+- 遠觀正午 `brightRatio ≈ 0.5`、聚焦特寫 `≈ 0.75`(天空可見即偏高)
+- 跑完「聚焦 8 種 → 導覽 8 站 → 時間 0..24 掃描 → 漫遊往返」後 console 無 error
+
+完整驗證腳本見 `docs/VERIFICATION.md`,可整段貼到 console 重跑。
+
+---
+
+## 3. 檔案地圖
+
+| 檔案 | 職責 |
+|---|---|
+| `index.html` | DOM 骨架 + importmap(`three` → `vendor/`) |
+| `css/style.css` | 全部樣式(深色琥珀金質感;美學要求:高級、**不要可愛風**) |
+| `js/data.js` | **恐龍資料庫**(真實古生物數據 + 所有中文教學文案)、導覽順序、時刻語意。**改教學內容只動這裡。** |
+| `js/util.js` | 種子亂數、值噪聲、fBm、Canvas 輔助 |
+| `js/textures.js` | 程序化貼圖(地表+法線、皮膚反蔭蔽、樹冠 alpha、樹皮、噪聲) |
+| `js/world.js` | 谷地場景:`heightAt(x,z)` 高度場、地形/河流/植被/岩石、天空 shader、`skyStateForHour(h)` 光照曲線 |
+| `js/dino.js` | **程序化恐龍模型**,每科一個 builder(theropod/sauropod/ceratopsian/…),回傳含可動部位的 Group |
+| `js/ui.js` | 全部 DOM 介面(只反映狀態+回呼,不持有邏輯) |
+| `js/main.js` | 總指揮:狀態機、渲染迴圈、相機、互動、漫遊、`__DW` 測試 API |
+| `tools/serve.mjs` | 開發用靜態伺服器 |
+
+---
+
+## 4. 核心架構(改 code 前必懂)
+
+### 4.1 狀態機(`main.js` 的 `state` 物件 = 唯一事實來源)
+
+```
+state.view       'overview' | 'walk'
+state.focus      恐龍 id | null
+state.following  遠觀時相機是否跟隨聚焦的恐龍
+state.time       0..24 一天的時刻 —— 天色/光照都是它的純函數
+state.timeFlow   時間是否自動流動
+state.tourIndex  -1=未導覽,否則為站別
+```
+
+**鐵律一:狀態與動畫分離。** 使用者操作當下狀態立即改變(聚焦、切視角、資訊面板都是同步的);
+相機飛行(`flyTween`)、淡入淡出只是裝飾層。動畫被節流/中斷/掉幀,邏輯完全不受影響。
+👉 為什麼:過去專案(棋類)把邏輯綁在動畫回呼上,背景分頁節流時整個卡死。**不要走回頭路。**
+
+**鐵律二:場景由參數純函數決定,不做跨幀增量累加。** 天色是 `skyStateForHour(state.time)`;
+恐龍站位是 `heightAt(base.x, base.z)` + 呼吸偏移;翼龍盤旋是 `elapsed` 的三角函數。
+任意暫停/拉時間軸都不累積誤差。
+
+### 4.2 渲染迴圈與 hidden browser 對策(`main.js`)
+
+- **驅動器在 start 當下就依 `document.hidden` 選擇**:hidden → `setInterval(250ms)`;visible → rAF + 400ms 看門狗。
+  👉 為什麼:頁面一載入就是 hidden 時不會有 `visibilitychange` 事件,只在事件裡切換的後備永遠不啟動(邏輯凍結)。
+- **切換驅動器前同時 `cancelAnimationFrame` + `clearInterval`**,否則 hidden↔visible 循環會累積多條 rAF 鏈。
+- **載入期間的讓步用 `setTimeout(0)`**(`yieldFrame`),不是 rAF(hidden 下 rAF 永不觸發會卡死載入)。
+  ⚠️ 已知取捨:hidden 分頁 setTimeout 會被節流,所以「載入中就切到背景」會拖慢載入;回到前景即恢復。
+- `ResizeObserver` 監聽容器;`sizeToContainer` 有 `max(1, …)` 保護 0×0。
+
+### 4.3 漫遊模式與 Pointer Lock(`main.js`)
+
+- WASD 移動、Shift 奔跑、滑鼠環顧、`1` 回遠觀 / `2` 進漫遊。相機用 `heightAt` 貼地(眼高 1.7m)。
+- **Pointer Lock 冷卻**:玩家按 Esc 退出後,瀏覽器約 1.25s 內 `requestPointerLock()` 必失敗。
+  對策(已內建,勿退化):
+  - `pointerlockerror` 用**連續失敗計數**,`≥3` 次才顯示「環境不支援」提示,不第一次就永久降級。
+  - resume 的 `requestPointerLock()` 一律 `.catch(()=>{})`,玩家再點畫面自然重試。
+  - 解鎖時顯示 `#resumeTip`(點畫面繼續 / 按 1 返回),不強制重鎖。
+
+### 4.4 比例與尺寸
+
+`dino.js` 每個 builder 以「標準單位≈公尺」建模,再依 `species.heightM` 整體縮放,
+所以 8 隻恐龍彼此的大小比例是對的(腕龍 12m vs 伶盜龍 0.5m 的懸殊感是刻意的教學效果)。
+
+### 4.5 已踩過的坑(修過,不要再犯)
+
+1. **預設相機俯角太陡會整片綠**:`orbit.phi` 太小(接近垂直)時幾乎看不到天空,畫面死板偏暗。
+   第一版把 `phi` 從 1.05 調到 **1.32**、`dist` 78、`exposure` 1.25 才平衡了地平線與天空。改相機預設時用 `DW.sample()` 確認 `brightRatio` 沒掉。
+2. **`crossPlanes`/`mergeGeos` 是自寫的幾何合併**(避免依賴 BufferGeometryUtils);若加新植被沿用它,別假設有 addons。
+3. 貼圖全走 Canvas;**不要用彩色 emoji `fillText`**(光柵化極貴,成本會遞延到第一次 `getImageData` 才爆)。
+
+---
+
+## 5. 發佈(GitHub Pages)
+
+- 帳號:`sancola1219-collab`(其他專案:boardgames、drawing-board、pivot-helper、space-world 同帳號)
+- PAT 已存在 Windows 認證管理員,`git push` 免輸入;**`gh` CLI 與 python 不可用**
+- 需要 GitHub API 時(建 repo、開 Pages),用 **Git Bash**(PowerShell 5.1 管線餵 secret 會壞):
+  ```bash
+  PAT=$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill | sed -n 's/^password=//p')
+  curl -s -H "Authorization: token $PAT" https://api.github.com/user   # 驗證
+  # 建 repo:POST /user/repos {name:"dino-world"}
+  # 開 Pages:POST /repos/OWNER/dino-world/pages {source:{branch:"main",path:"/"}}
+  ```
+- 純靜態、無 build:push 到 `main` 後 Pages 直接服務根目錄。**線上網址見 §8。**
+
+---
+
+## 6. 路線圖(未完成的擴充方向,依教學價值排序)
+
+- [ ] **恐龍實體漫遊互動**:漫遊模式走近恐龍時彈出資料卡(目前資料卡只在遠觀點擊觸發)。
+- [ ] **更多物種**:似鳥龍、棘龍、劍齒虎不算恐龍要標註;資料結構照 `data.js` 的欄位加即可。
+- [ ] **群體行為**:同種恐龍成群、植食者遇肉食者走避(狀態層加簡單 boids,勿綁動畫回呼)。
+- [ ] **腳印/塵土/河流反射**:粒子與 shader,注意仍要零資產。
+- [ ] **小測驗模式**:資料都在 `data.js`,出題 UI 照導覽卡的模式做。
+- [ ] **音效**(環境音、恐龍叫聲):目前刻意零資產;若加注意瀏覽器自動播放政策。
+- [ ] **地形碰撞細化**:漫遊目前只做地面貼合,未擋樹幹/岩石。
+
+---
+
+## 7. 改動守則
+
+1. 改邏輯前先讀 `main.js` 開頭的兩條鐵律註解(§4.1)。
+2. 任何視覺改動,用 `__DW` + `sample()` 像素取樣驗證(§2),**不要只信截圖**(這台機器截圖必逾時)。
+3. 教學文案(`data.js`)是給台灣學生看的:繁體中文、數據要對(主流古生物學共識)。
+4. 美學:高級質感(深色、琥珀金點綴、serif 標題、髮絲線、寬字距),**不要可愛風**。
+5. 驗證完成後更新 `docs/VERIFICATION.md` 的紀錄(附日期與模型名)。
+6. 發佈前跑一次 §2 的完整煙霧測試,確認 console 無 error 再 push。
+
+---
+
+## 8. 目前狀態
+
+- 第一版功能完成、通過 §2 全部驗證(2026-07-06, Opus 4.8);console 零錯誤。
+- 視覺 QA:因 hidden browser 截圖逾時,只做了像素取樣驗證(`brightRatio` 基線見 §2)。
+  **使用者/接手者回到可見視窗時,值得開頁面實看一次質感。**
+- 線上網址:發佈後補填於此(見 §5 流程)。

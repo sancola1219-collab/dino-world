@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>恐龍世界 — 白堊紀谷地教學模擬</title>
+<meta name="description" content="寫實的恐龍生態互動模擬:遠觀整座谷地、走進恐龍身邊近距離觀察,附完整中文教學資訊。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M18 78 L30 78 L34 60 L46 58 L52 70 L62 70 L58 52 L70 46 L84 50 L88 40 L74 30 L54 32 L40 44 L26 50 L20 64 Z' fill='%23c9a35c'/></svg>">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<div id="app"></div>
+<div id="labels"></div>
+
+<!-- 頂欄 -->
+<header id="topbar">
+  <div id="brand">
+    <h1>恐龍世界</h1>
+    <div id="breadcrumb">白堊紀晚期 · 谷地</div>
+  </div>
+  <nav id="nav">
+    <button id="navOverview" class="navBtn">遠觀</button>
+    <button id="navWalk" class="navBtn">漫遊</button>
+    <button id="navDex" class="navBtn">圖鑑</button>
+    <button id="navTour" class="navBtn">生態導覽</button>
+    <button id="navSettings" class="navBtn" title="設定">⚙</button>
+  </nav>
+</header>
+
+<!-- 左側圖鑑 -->
+<aside id="dexPanel">
+  <div class="dexHead"><h3>物種圖鑑</h3><button id="dexClose" title="關閉">✕</button></div>
+  <div id="dexList"></div>
+</aside>
+
+<!-- 右側資訊面板 -->
+<aside id="infoPanel">
+  <button id="infoClose" title="關閉">✕</button>
+  <div id="infoBody"></div>
+</aside>
+
+<!-- 底部:時間控制 -->
+<div id="timeBar">
+  <button id="btnDayFlow" title="時間流動/暫停">⏸</button>
+  <input id="dayRange" type="range" min="0" max="24" step="0.1" value="10">
+  <span id="clockText">10:00</span>
+  <span id="dayPhase">日間</span>
+</div>
+
+<!-- 左下:提示 -->
+<div id="bottomLeft">
+  <div id="hint">拖曳旋轉 · 滾輪縮放 · 點擊恐龍閱讀資料並跟隨</div>
+</div>
+
+<!-- 漫遊模式 HUD -->
+<div id="crosshair"></div>
+<div id="resumeTip">
+  <div class="resumeCard">
+    <h3>視角已解除</h3>
+    <p>點擊畫面繼續漫遊(瀏覽器需要約一秒的冷卻)<br>或按 <b>1</b> 返回遠觀視角</p>
+  </div>
+</div>
+
+<!-- 導覽卡 -->
+<div id="tourCard">
+  <div class="tourHead">
+    <span id="tourStep"></span>
+    <h3 id="tourTitle"></h3>
+    <button id="tourExit" title="結束導覽">✕</button>
+  </div>
+  <p id="tourText"></p>
+  <div class="tourNav">
+    <button id="tourPrev">‹ 上一站</button>
+    <button id="tourNext">下一站 ›</button>
+  </div>
+</div>
+
+<!-- 設定面板 -->
+<div id="settings">
+  <div class="setHead"><h3>設定</h3><button id="settingsClose">✕</button></div>
+  <div class="setGroup">
+    <div class="setTitle">顯示</div>
+    <label class="check"><input type="checkbox" id="setLabels" checked><span>恐龍名稱標籤</span></label>
+    <label class="check"><input type="checkbox" id="setShadows" checked><span>即時陰影</span></label>
+    <label class="check"><input type="checkbox" id="setFog" checked><span>大氣霧</span></label>
+  </div>
+  <div class="setGroup">
+    <div class="setTitle">畫質</div>
+    <label class="radio"><input type="radio" name="quality" value="high" checked><span>高(原生解析度)</span></label>
+    <label class="radio"><input type="radio" name="quality" value="low"><span>低(適合舊裝置)</span></label>
+  </div>
+</div>
+
+<!-- 操作說明 -->
+<div id="helpOverlay">
+  <div class="helpCard">
+    <h2>歡迎來到恐龍世界</h2>
+    <p class="helpSub">一座可以遠觀谷地、走近恐龍的互動白堊紀教室</p>
+    <ul>
+      <li><b>遠觀</b>:拖曳旋轉、滾輪縮放,俯瞰整座谷地的生態</li>
+      <li><b>點擊恐龍</b>(或牠的標籤)開啟教學資料卡,並可切換「跟隨視角」</li>
+      <li><b>漫遊</b>:第一人稱走進谷地 — <b>W A S D</b> 移動、<b>Shift</b> 奔跑、滑鼠環顧、<b>1</b> 返回遠觀</li>
+      <li>右上角開啟 <b>圖鑑</b> 認識八種恐龍,或啟動 <b>生態導覽</b> 一站一站走訪</li>
+      <li>底部滑桿控制 <b>一天的時刻</b> — 黎明、正午、黃昏、星夜各有不同的光</li>
+    </ul>
+    <button id="helpClose">進入谷地</button>
+  </div>
+</div>
+
+<!-- 載入畫面 -->
+<div id="loading">
+  <div class="loadInner">
+    <h1>恐龍世界</h1>
+    <p class="loadSub">DINOSAUR WORLD · 白堊紀谷地教學模擬</p>
+    <div class="loadTrack"><div id="loadBar"></div></div>
+    <p id="loadText">正在鋪設谷地...</p>
+  </div>
+</div>
+
+<div id="fade"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
