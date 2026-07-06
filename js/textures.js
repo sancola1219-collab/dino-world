@@ -81,13 +81,19 @@ export function makeSkinTexture(baseHex, accentHex, seed = 1, scaly = true) {
   for (let y = 0; y < S; y++) {
     for (let x = 0; x < S; x++) {
       const u = x / S, v = y / S;
-      const blotch = fbm(u * 6, v * 6, 4, seed);
-      const stripe = Math.sin(u * Math.PI * 7 + fbm(u * 3, v * 3, 3, seed + 2) * 4);
-      let col = lerp3(base, accent, clamp((blotch - 0.5) * 2, 0, 1) * 0.7);
-      if (stripe > 0.6) col = lerp3(col, accent, (stripe - 0.6) * 1.5);
-      // 腹部(貼圖下半)漸亮,模擬反蔭蔽(countershading)。
-      const belly = clamp((v - 0.55) * 2.2, 0, 1);
-      col = lerp3(col, [col[0] * 1.5 + 0.15, col[1] * 1.5 + 0.13, col[2] * 1.4 + 0.12], belly * 0.6);
+      // 自然斑駁:大塊斑 + 細碎變化(往 base 收斂),避免整齊的卡通條紋。
+      const mottle = fbm(u * 5, v * 5, 4, seed);
+      const fine = fbm(u * 16, v * 16, 3, seed + 3);
+      const dark = new Array(3); for (let k = 0; k < 3; k++) dark[k] = base[k] * 0.62;   // 深色版底色
+      let col = lerp3(base, accent, clamp((mottle - 0.5) * 1.5, 0, 1) * 0.45);            // 少量 accent 斑
+      col = lerp3(col, dark, clamp((0.42 - fine) * 1.6, 0, 1) * 0.5);                     // 細碎深斑(自然)
+      // 極淡的縱向紋(只在部分位置、幅度小),不再是整齊亮條。
+      const faint = Math.sin(u * Math.PI * 9 + fbm(u * 3, v * 3, 3, seed + 2) * 5);
+      if (faint > 0.82) col = lerp3(col, dark, (faint - 0.82) * 1.2);
+      // 背側(貼圖上半)略深、腹部(下半)漸亮 —— 反蔭蔽,凸顯立體。
+      col = lerp3(col, dark, clamp((0.4 - v) * 1.2, 0, 1) * 0.35);
+      const belly = clamp((v - 0.6) * 2.4, 0, 1);
+      col = lerp3(col, [col[0] * 1.45 + 0.14, col[1] * 1.45 + 0.12, col[2] * 1.4 + 0.11], belly * 0.55);
       // 鱗片顆粒。
       const scale = scaly ? (noise2(u * 90, v * 90, seed + 7) * 0.28 + 0.86) : (0.9 + fbm(u * 20, v * 20, 3, seed) * 0.2);
       const i = (y * S + x) * 4;
@@ -105,17 +111,18 @@ export function makeSkinTexture(baseHex, accentHex, seed = 1, scaly = true) {
   const { canvas: ncanvas, ctx: nctx } = makeCanvas(NS, NS);
   const nimg = nctx.createImageData(NS, NS);
   const nd = nimg.data;
-  const H = (xx, yy) => {
-    const u = xx / NS, v = yy / NS;
+  // 先把高度場算進陣列一次(避免每像素重算 4 次噪聲 → 載入更快)。
+  const hf = new Float32Array(NS * NS);
+  for (let y = 0; y < NS; y++) for (let x = 0; x < NS; x++) {
+    const u = x / NS, v = y / NS;
     const scaleN = scaly ? noise2(u * 90, v * 90, seed + 7) : fbm(u * 22, v * 22, 3, seed);
-    const wrinkle = fbm(u * 10, v * 10, 3, seed + 4) * 0.4;
-    return scaleN * 0.7 + wrinkle;
-  };
+    hf[y * NS + x] = scaleN * 0.7 + fbm(u * 10, v * 10, 3, seed + 4) * 0.4;
+  }
+  const H = (xx, yy) => hf[((yy % NS) + NS) % NS * NS + ((xx % NS) + NS) % NS];
   const strength = scaly ? 2.2 : 1.4;
   for (let y = 0; y < NS; y++) {
     for (let x = 0; x < NS; x++) {
-      const hl = H((x - 1 + NS) % NS, y), hr = H((x + 1) % NS, y);
-      const hu = H(x, (y - 1 + NS) % NS), hd = H(x, (y + 1) % NS);
+      const hl = H(x - 1, y), hr = H(x + 1, y), hu = H(x, y - 1), hd = H(x, y + 1);
       const nx = (hl - hr) * strength, ny = (hu - hd) * strength, nz = 1;
       const len = Math.hypot(nx, ny, nz);
       const i = (y * NS + x) * 4;

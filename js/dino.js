@@ -364,21 +364,28 @@ function ceratopsian(sp, mat) {
     { x: -4.4, y: 2.45, r: 0.5 },
     { x: -5.4, y: 2.4, r: 0.18 },
   ]));
-  // 頭:臉、喙、頸盾、三角。
+  // 頭:大臉、喙、招牌大頸盾、三支角(全部放大到一眼認得出三角龍)。
   const head = new THREE.Group(); head.position.set(3.6, 2.55, 0);
-  const face = ellip(mat, 0.85, 0.7, 0.65); face.position.set(0.2, 0, 0); head.add(face);
-  const beakMat = new THREE.MeshStandardMaterial({ color: 0x6a5a44, roughness: 0.7 });
-  const beak = cone(beakMat, 0.34, 0.8, 8); beak.rotation.z = -Math.PI / 2; beak.position.set(1.15, -0.18, 0); head.add(beak);
-  // 頸盾:大而略凹的圓盤,微向後上。
-  const frillMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(sp.color).lerp(new THREE.Color(sp.accent), 0.5), roughness: 0.8, side: THREE.DoubleSide });
-  const frill = new THREE.Mesh(new THREE.CircleGeometry(1.7, 22), frillMat);
-  frill.position.set(-0.95, 0.5, 0); frill.rotation.y = Math.PI / 2; frill.rotation.x = -0.3; frill.scale.set(1, 1.15, 1); frill.castShadow = true; head.add(frill);
-  // 盾緣骨突。
-  for (let i = 0; i < 9; i++) { const a = (i / 8 - 0.5) * Math.PI * 1.1; const bump = cone(frillMat, 0.14, 0.4, 6); bump.position.set(-0.95 + Math.cos(a) * 0.1, 0.5 + Math.sin(a) * 1.75, 0); bump.rotation.z = -a; head.add(bump); }
-  const hornMat = new THREE.MeshStandardMaterial({ color: 0xdccfb2, roughness: 0.55 });
-  const nose = cone(hornMat, 0.16, 0.55, 8); nose.position.set(0.85, 0.42, 0); nose.rotation.z = -0.2; head.add(nose);
-  for (const s of [1, -1]) { const brow = cone(hornMat, 0.16, 1.3, 8); brow.position.set(0.35, 0.7, s * 0.42); brow.rotation.z = -0.35; brow.rotation.x = -s * 0.15; head.add(brow); }
-  addEyes(head, 0.45, 0.15, 0.6, 0.1);
+  const face = ellip(mat, 1.05, 0.82, 0.72); face.position.set(0.35, -0.05, 0); head.add(face);
+  const beakMat = new THREE.MeshStandardMaterial({ color: 0x5a4a36, roughness: 0.7 });
+  const beak = cone(beakMat, 0.36, 0.95, 8); beak.rotation.z = -Math.PI / 2 - 0.15; beak.position.set(1.45, -0.35, 0); head.add(beak);
+  // 頸盾:大盾牌,**寬面朝側邊(從側面看得見)**、向後上傾。(舊版 rotation.y=π/2 讓盾片側轉成一條線、等於隱形。)
+  const frillMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(sp.color).lerp(new THREE.Color(sp.accent), 0.55), roughness: 0.82, side: THREE.DoubleSide });
+  const FR = 2.4, TZ = 0.5, cs = Math.sin(TZ), cc = Math.cos(TZ);
+  const frill = new THREE.Mesh(new THREE.CircleGeometry(FR, 28), frillMat);
+  frill.position.set(-0.55, 0.95, 0); frill.rotation.z = TZ; frill.scale.set(1.05, 1.15, 1); frill.castShadow = true; head.add(frill);
+  // 盾面兩片略前傾補厚 + 盾緣骨突。
+  const frillBack = frill.clone(); frillBack.position.z = 0.001; head.add(frillBack);
+  for (let i = 0; i < 11; i++) {
+    const a = (i / 10 - 0.5) * Math.PI * 1.15, lx = Math.cos(a) * FR, ly = Math.sin(a) * FR;
+    const rx = lx * cc - ly * cs, ry = lx * cs + ly * cc;
+    const bump = cone(frillMat, 0.17, 0.55, 6); bump.position.set(-0.55 + rx, 0.95 + ry, 0); bump.rotation.z = TZ - a - Math.PI / 2; head.add(bump);
+  }
+  // 三支角:鼻角 + 一對長眉角(向前上)。
+  const hornMat = new THREE.MeshStandardMaterial({ color: 0xe0d3b6, roughness: 0.5 });
+  const nose = cone(hornMat, 0.19, 0.75, 10); nose.position.set(1.1, 0.35, 0); nose.rotation.z = -0.15; head.add(nose);
+  for (const s of [1, -1]) { const brow = cone(hornMat, 0.19, 2.0, 10); brow.position.set(0.55, 0.85, s * 0.46); brow.rotation.z = -0.5; brow.rotation.x = -s * 0.12; head.add(brow); }
+  addEyes(head, 0.6, 0.2, 0.66, 0.11);
   g.add(head);
   for (const sx of [1, -1]) for (const zx of [1, -1]) {
     const leg = legTapered(mat, sx > 0 ? 1.55 : 1.35, sx > 0 ? 1.2 : 1.05, 0.5, 0.34, 0.26);
@@ -541,8 +548,8 @@ function pterosaur(sp, mat) {
   // 頭:長喙 + 頭冠。
   const head = new THREE.Group(); head.position.set(3.4, 1.1, 0);
   const beak = cone(mat, 0.2, 2.4, 8); beak.rotation.z = -Math.PI / 2 + 0.15; beak.position.set(1.15, -0.05, 0); head.add(beak);
-  const crest = new THREE.Mesh(new THREE.CircleGeometry(0.7, 14, 0, Math.PI), new THREE.MeshStandardMaterial({ color: sp.accent, side: THREE.DoubleSide, roughness: 0.7 }));
-  crest.rotation.y = Math.PI / 2; crest.position.set(-0.15, 0.35, 0); head.add(crest);
+  const crest = new THREE.Mesh(new THREE.CircleGeometry(0.85, 16, 0, Math.PI), new THREE.MeshStandardMaterial({ color: sp.accent, side: THREE.DoubleSide, roughness: 0.7 }));
+  crest.position.set(0.1, 0.25, 0); head.add(crest);   // XY 平面、寬面朝側邊(從側面看得見冠飾),不再側轉成一條線
   addEyes(head, 0.35, 0.12, 0.16, 0.07);
   g.add(head);
   // 巨翼:上臂骨 + 翼指 + 三角翼膜。
