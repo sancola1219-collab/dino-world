@@ -81,7 +81,7 @@ export function buildWorld(scene, quality) {
     veg.leafMats.forEach((m) => m.color.setHex(mood.foliage));
     veg.fernMat.color.setHex(mood.foliage);
     for (const im of veg.trees) im.count = Math.round(veg.treeFull * mood.treeRatio);
-    veg.ferns.count = Math.round(veg.fernFull * Math.max(0.5, mood.treeRatio));
+    veg.ferns.count = Math.round(veg.fernFull * (mood.marine ? 0.2 : Math.max(0.5, mood.treeRatio)));
   };
   return refs;
 }
@@ -98,7 +98,7 @@ function buildVegetation(quality) {
   });
   const leafMat2 = leafMat.clone(); leafMat2.map = canopyTex2;
 
-  const treeCount = quality === 'low' ? 90 : 200;
+  const treeCount = quality === 'low' ? 120 : 300;
   const trunkGeo = new THREE.CylinderGeometry(0.5, 0.9, 1, 6);
   const trunkMeshes = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
   // 基礎面片為單位大小(1);實際樹冠尺寸完全由每棵樹的 instance 縮放決定。
@@ -139,7 +139,7 @@ function buildVegetation(quality) {
   g.add(trunkMeshes, leavesA, leavesB);
 
   // 蕨叢(低矮地被)。
-  const fernCount = quality === 'low' ? 200 : 500;
+  const fernCount = quality === 'low' ? 300 : 800;
   const fernGeo = crossPlanes(1.2);
   const fernTex = makeCanopyTexture(15, [0.26, 0.46, 0.20]);
   const fernMat = new THREE.MeshStandardMaterial({ map: fernTex, alphaTest: 0.4, transparent: true, side: THREE.DoubleSide, roughness: 1 });

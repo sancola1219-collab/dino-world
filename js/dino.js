@@ -7,10 +7,15 @@ import * as THREE from 'three';
 import { makeSkinTexture } from './textures.js';
 
 function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+// 皮膚材質依物種 id 快取:族群(herd)會重複建同種個體,快取讓昂貴的程序化貼圖只算一次。
+const _skinCache = {};
 function skinMat(sp) {
+  if (_skinCache[sp.id]) return _skinCache[sp.id];
   const scaly = sp.build !== 'raptor' && sp.build !== 'pterosaur' && sp.build !== 'earlytheropod';
   const tex = makeSkinTexture(sp.color, sp.accent, hash(sp.id), scaly);
-  return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0.0 });
+  const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0.0 });
+  _skinCache[sp.id] = m;
+  return m;
 }
 
 /* ---------------- 基本體 ---------------- */
@@ -103,6 +108,15 @@ export function buildDino(sp) {
     case 'hadrosaur': model = hadrosaur(sp, mat); break;
     case 'ankylosaur': model = ankylosaur(sp, mat); break;
     case 'pterosaur': model = pterosaur(sp, mat); break;
+    // 非恐龍生物(寒武 → 冰河):
+    case 'trilobite': model = trilobite(sp, mat); break;
+    case 'anomalocaris': model = anomalocaris(sp, mat); break;
+    case 'opabinia': model = opabinia(sp, mat); break;
+    case 'dragonfly': model = dragonfly(sp, mat); break;
+    case 'millipede': model = millipede(sp, mat); break;
+    case 'amphibian': model = amphibian(sp, mat); break;
+    case 'sailback': case 'synapsid': case 'dicynodont': case 'beast': model = beast(sp, mat); break;
+    case 'snake': model = snake(sp, mat); break;
     default: model = theropod(sp, mat);
   }
   model.userData.species = sp;
@@ -532,5 +546,203 @@ function pterosaur(sp, mat) {
   const scale = (sp.heightM || 5) / 3.4;
   g.scale.setScalar(scale);
   g.userData.parts = parts; g.userData.hipY = 0; g.userData.flyer = true;
+  return g;
+}
+
+/* ================= 非恐龍生物(寒武 → 冰河) ================= */
+
+// 通用四足獸/獸孔類:哺乳類(始祖馬/巨犀/長毛象/劍齒虎/披毛犀/大地懶)與二疊紀似哺乳爬行類。
+// 由 sp.model 旗標決定特徵(trunk 象鼻 / tusks 長牙 / noseHorn 犀角 / sabers 劍齒 / claws 巨爪 / hump 肩峰 / fur 毛 / neck 頸長 …)。
+function beast(sp, mat) {
+  const g = new THREE.Group(); const parts = { legs: [] };
+  const o = sp.model || {}, build = sp.build;
+  const neck = o.neck ?? (build === 'dicynodont' ? 0.4 : 0.7), hs = o.headSize ?? 1.0;
+  const hipY = 2.4, hump = o.hump ? 0.55 : 0;
+  const headX = 3.0 + neck, headY = hipY + 0.15 + neck * 0.5;
+  const spine = [
+    { x: headX + 0.55 * hs, y: headY - 0.05, r: 0.26 * hs },
+    { x: headX, y: headY + 0.05, r: 0.5 * hs, ry: 1.0, rz: 0.95 },
+    { x: headX - 0.55, y: headY - 0.25 - neck * 0.15, r: 0.4 },
+    { x: 2.55, y: hipY + 0.25, r: 0.72 },
+    { x: 1.85, y: hipY + 0.35 + hump, r: 1.15, rz: 1.05 },
+    { x: 0.6, y: hipY + 0.2 + hump * 0.5, r: 1.32, rz: 1.08 },
+    { x: -0.7, y: hipY + 0.15, r: 1.24, rz: 1.05 },
+    { x: -1.95, y: hipY + 0.2, r: 0.95 },
+    { x: -2.9, y: hipY + 0.28, r: 0.5 },
+    { x: -3.8, y: hipY + 0.32, r: 0.26 },
+    { x: -4.7, y: hipY + 0.3, r: 0.08 },
+  ];
+  if (o.shortTail) spine.splice(8, 3, { x: -2.7, y: hipY + 0.2, r: 0.3 }, { x: -3.3, y: hipY + 0.2, r: 0.1 });
+  g.add(loft(mat, spine, 16));
+
+  const head = new THREE.Group(); head.position.set(headX, headY, 0);
+  addEyes(head, 0.32 * hs, 0.18 * hs, 0.3 * hs, 0.07 * hs);
+  if (o.ear) for (const s of [1, -1]) { const ear = box(mat, 0.1, 0.32, 0.05); ear.position.set(-0.05, 0.42, s * 0.28); head.add(ear); }
+  if (o.trunk) { let px = 0.6, py = 0.0, pr = 0.22; for (let i = 0; i < 5; i++) { const seg = tcyl(mat, pr, pr * 0.82, 0.5); seg.position.set(px, py, 0); seg.rotation.z = -0.5 - i * 0.28; head.add(seg); px += 0.3; py -= 0.36; pr *= 0.82; } }
+  if (o.tusks) { const tk = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.5 }); for (const s of [1, -1]) { const t = tcyl(tk, 0.12, 0.03, o.tusks === 'curved' ? 2.6 : 1.6); t.position.set(0.7, -0.2, s * 0.28); t.rotation.z = o.tusks === 'curved' ? -2.0 : -1.2; t.rotation.x = s * 0.15; if (o.tusks === 'curved') t.rotation.y = s * 0.25; head.add(t); } }
+  if (o.sabers || build === 'synapsid') { const tk = new THREE.MeshStandardMaterial({ color: 0xf0e8d0, roughness: 0.45 }); for (const s of [1, -1]) { const t = tcyl(tk, 0.09, 0.02, 1.1); t.position.set(0.6, -0.4, s * 0.18); t.rotation.z = -0.15; head.add(t); } }
+  if (o.noseHorn) { const hn = new THREE.MeshStandardMaterial({ color: 0xcdbfa2, roughness: 0.55 }); const horn = cone(hn, 0.16, o.noseHorn === 'long' ? 1.5 : 0.9, 8); horn.position.set(0.75, 0.4, 0); horn.rotation.z = -0.35; head.add(horn); const h2 = cone(hn, 0.1, 0.6, 8); h2.position.set(0.3, 0.55, 0); h2.rotation.z = -0.2; head.add(h2); }
+  if (build === 'dicynodont') { const tk = new THREE.MeshStandardMaterial({ color: 0xe8dcc0 }); const beak = cone(new THREE.MeshStandardMaterial({ color: 0x6a5a44, roughness: 0.7 }), 0.22, 0.5, 8); beak.rotation.z = -Math.PI / 2; beak.position.set(0.65, -0.1, 0); head.add(beak); for (const s of [1, -1]) { const t = tcyl(tk, 0.06, 0.02, 0.45); t.position.set(0.45, -0.3, s * 0.18); t.rotation.z = -1.4; head.add(t); } }
+  g.add(head);
+
+  if (build === 'sailback') {                       // 異齒龍背帆
+    const sm = new THREE.MeshStandardMaterial({ color: sp.accent, roughness: 0.85, side: THREE.DoubleSide });
+    const shape = new THREE.Shape(); shape.moveTo(1.9, 0);
+    for (let i = 0; i <= 12; i++) { const t = i / 12, px = 1.9 - t * 3.7, h = Math.sin(t * Math.PI) * 2.6; shape.lineTo(px, h); }
+    shape.lineTo(-1.8, 0); shape.closePath();
+    const sail = new THREE.Mesh(new THREE.ShapeGeometry(shape), sm); sail.position.set(0, hipY + 0.7, 0); sail.castShadow = true; g.add(sail);
+  }
+  if (o.fur) { const fm = new THREE.MeshStandardMaterial({ color: sp.color, roughness: 1, side: THREE.DoubleSide }); for (let i = 0; i < 16; i++) { const s = i < 8 ? 1 : -1, px = -2.2 + (i % 8) * 0.62; const f = box(fm, 0.55, 0.04, 0.85); f.position.set(px, hipY - 0.55, s * 0.95); f.rotation.z = 1.45; g.add(f); } }
+
+  const ll = o.longLegs ? 1.5 : 1.0, th = 1.15 * ll, sh = 1.05 * ll;
+  for (const sx of [1, -1]) for (const zx of [1, -1]) {
+    const isBack = sx > 0;
+    const leg = legTapered(mat, isBack ? th : th * 0.92, isBack ? sh : sh * 0.92, 0.34, 0.24, 0.2 * (o.claws && !isBack ? 1.4 : 1));
+    leg.group.position.set(isBack ? -1.7 : 1.9, hipY, zx * 0.95);
+    if (o.claws && !isBack) { const cm = new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 0.5 }); for (let c = 0; c < 3; c++) { const cl = cone(cm, 0.06, 0.42, 6); cl.position.set(0.12, -th - sh + 0.1, (c - 1) * 0.14); cl.rotation.z = -1.3; leg.lower.add(cl); } }
+    g.add(leg.group); parts.legs.push(leg);
+  }
+  const scale = sp.heightM / 2.4; g.scale.setScalar(scale);
+  g.userData.parts = parts; g.userData.hipY = hipY * scale; g.userData.quadruped = true;
+  return g;
+}
+
+// 三葉蟲:低伏三葉背甲 + 頭甲/尾甲 + 兩側小腳(海床爬行)。
+function trilobite(sp, mat) {
+  const g = new THREE.Group(); const parts = { legs: [] };
+  const shell = mat;
+  const body = ellip(shell, 1.0, 0.38, 0.72); body.position.set(0, 0.38, 0); g.add(body);
+  const ridge = ellip(shell, 1.05, 0.5, 0.26); ridge.position.set(0, 0.4, 0); g.add(ridge);      // 中葉
+  const head = ellip(shell, 0.5, 0.42, 0.82); head.position.set(0.95, 0.38, 0); g.add(head);
+  const tail = ellip(shell, 0.5, 0.3, 0.52); tail.position.set(-1.0, 0.36, 0); g.add(tail);
+  for (const s of [1, -1]) { const e = sphere(EYE, 0.08, 6); e.position.set(1.02, 0.58, s * 0.38); g.add(e); }
+  for (let i = 0; i < 6; i++) for (const s of [1, -1]) { const leg = tcyl(mat, 0.05, 0.03, 0.5); leg.position.set(0.7 - i * 0.28, 0.14, s * 0.6); leg.rotation.x = s * 1.0; g.add(leg); }
+  const scale = Math.max(sp.heightM / 0.7, 0.5); g.scale.setScalar(scale);
+  g.userData.parts = parts; g.userData.hipY = 0.1 * scale;
+  return g;
+}
+
+// 奇蝦:分節長身 + 兩側肉鰭 + 前端一對抓握附肢 + 柄眼(游泳)。
+function anomalocaris(sp, mat) {
+  const g = new THREE.Group(); const parts = { wings: [] };
+  g.add(loft(mat, [
+    { x: 2.2, y: 0, r: 0.28, ry: 0.9 },
+    { x: 1.5, y: 0, r: 0.42, ry: 0.85 },
+    { x: 0.7, y: 0, r: 0.5, ry: 0.8 },
+    { x: -0.2, y: 0, r: 0.46, ry: 0.8 },
+    { x: -1.1, y: 0, r: 0.36, ry: 0.8 },
+    { x: -2.0, y: 0, r: 0.22 },
+    { x: -2.8, y: 0, r: 0.08 },
+  ], 14));
+  const finMat = new THREE.MeshStandardMaterial({ color: sp.accent, roughness: 0.9, side: THREE.DoubleSide });
+  const fins = new THREE.Group();
+  for (let i = 0; i < 6; i++) for (const s of [1, -1]) { const f = box(finMat, 0.5, 0.02, 0.36); f.position.set(1.0 - i * 0.55, -0.05, s * 0.5); f.rotation.x = s * 0.4; fins.add(f); }
+  g.add(fins); parts.wings.push(fins);
+  for (const s of [1, -1]) { let px = 2.4, py = -0.1; for (let i = 0; i < 4; i++) { const seg = tcyl(mat, 0.09, 0.06, 0.4); seg.position.set(px, py, s * 0.18); seg.rotation.z = -0.6 + i * 0.3; g.add(seg); px += 0.28; py -= 0.18; } }
+  for (const s of [1, -1]) { const e = sphere(EYE, 0.12, 8); e.position.set(2.0, 0.35, s * 0.22); g.add(e); }
+  const scale = (sp.heightM || 0.3) / 0.3; g.scale.setScalar(scale);
+  g.userData.parts = parts; g.userData.hipY = 0; g.userData.flyer = true;
+  return g;
+}
+
+// 歐巴賓海蠍:小分節身 + 五隻眼 + 前端長吻爪(游泳)。
+function opabinia(sp, mat) {
+  const g = new THREE.Group(); const parts = { wings: [] };
+  g.add(loft(mat, [
+    { x: 1.0, y: 0, r: 0.2 }, { x: 0.5, y: 0, r: 0.3 }, { x: -0.1, y: 0, r: 0.32 },
+    { x: -0.7, y: 0, r: 0.26 }, { x: -1.3, y: 0, r: 0.16 }, { x: -1.9, y: 0, r: 0.05 },
+  ], 12));
+  const finMat = new THREE.MeshStandardMaterial({ color: sp.accent, roughness: 0.9, side: THREE.DoubleSide });
+  const fins = new THREE.Group();
+  for (let i = 0; i < 5; i++) for (const s of [1, -1]) { const f = box(finMat, 0.34, 0.02, 0.26); f.position.set(0.5 - i * 0.42, -0.02, s * 0.32); f.rotation.x = s * 0.35; fins.add(f); }
+  g.add(fins); parts.wings.push(fins);
+  for (let i = 0; i < 5; i++) { const e = sphere(EYE, 0.07, 6); e.position.set(1.0 - i * 0.12, 0.3, (i - 2) * 0.12); g.add(e); }
+  let px = 1.1, py = 0.1; for (let i = 0; i < 4; i++) { const seg = tcyl(mat, 0.06, 0.05, 0.32); seg.position.set(px, py, 0); seg.rotation.z = -0.4 + i * 0.35; g.add(seg); px += 0.24; py -= 0.14; }
+  const scale = Math.max(sp.heightM / 0.32, 0.45); g.scale.setScalar(scale);
+  g.userData.parts = parts; g.userData.hipY = 0; g.userData.flyer = true;
+  return g;
+}
+
+// 巨脈蜻蜓:胸腹細長 + 大複眼 + 四片長翅(飛行)。
+function dragonfly(sp, mat) {
+  const g = new THREE.Group(); const parts = { wings: [] };
+  g.add(loft(mat, [
+    { x: 0.9, y: 0, r: 0.22 },
+    { x: 0.5, y: 0, r: 0.28 },
+    { x: 0.1, y: 0, r: 0.22 },
+    { x: -0.6, y: 0, r: 0.14 },
+    { x: -1.6, y: 0, r: 0.11 },
+    { x: -2.8, y: 0, r: 0.07 },
+    { x: -3.6, y: 0, r: 0.03 },
+  ], 12));
+  for (const s of [1, -1]) { const e = sphere(new THREE.MeshStandardMaterial({ color: sp.accent, roughness: 0.3, metalness: 0.2 }), 0.16, 8); e.position.set(0.95, 0.05, s * 0.14); g.add(e); }
+  const wm = new THREE.MeshStandardMaterial({ color: 0xbfe6df, roughness: 0.3, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+  for (const s of [1, -1]) for (const fwd of [0.35, -0.15]) {
+    const wing = new THREE.Group(); wing.position.set(fwd, 0.08, 0);
+    const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.lineTo(0.2, s * 2.3); shape.lineTo(-0.2, s * 2.2); shape.closePath();
+    const w = new THREE.Mesh(new THREE.ShapeGeometry(shape), wm); w.rotation.x = -Math.PI / 2; wing.add(w);
+    g.add(wing); parts.wings.push(wing);
+  }
+  const scale = Math.max((sp.heightM || 0.1) / 0.1 * 0.6, 1.5); g.scale.setScalar(scale);
+  g.userData.parts = parts; g.userData.hipY = 0; g.userData.flyer = true;
+  return g;
+}
+
+// 節胸蜈蚣:超長分節管身 + 兩側成排小腳(爬行)。
+function millipede(sp, mat) {
+  const g = new THREE.Group(); const parts = { legs: [] };
+  const nodes = []; const N = 16;
+  for (let i = 0; i <= N; i++) { const t = i / N; const r = 0.45 * (1 - Math.abs(t - 0.45) * 0.7); nodes.push({ x: 2.4 - t * 5.0, y: 0.4, r: Math.max(0.08, r) }); }
+  g.add(loft(mat, nodes, 12));
+  const head = ellip(mat, 0.4, 0.4, 0.45); head.position.set(2.5, 0.42, 0); g.add(head);
+  for (const s of [1, -1]) { const e = sphere(EYE, 0.06, 6); e.position.set(2.7, 0.55, s * 0.2); g.add(e); }
+  for (let i = 0; i < 14; i++) for (const s of [1, -1]) { const leg = tcyl(mat, 0.05, 0.03, 0.5); leg.position.set(2.0 - i * 0.32, 0.15, s * 0.4); leg.rotation.x = s * 1.1; g.add(leg); }
+  const scale = sp.heightM / 0.4; g.scale.setScalar(scale);
+  g.userData.parts = parts; g.userData.hipY = 0.2 * scale;
+  return g;
+}
+
+// 早期兩棲類(引螈):低伏寬身 + 寬扁大頭 + 四肢向兩側伸展(貼地)。
+function amphibian(sp, mat) {
+  const g = new THREE.Group(); const parts = { legs: [] };
+  g.add(loft(mat, [
+    { x: 2.6, y: 0.5, r: 0.45, ry: 0.7, rz: 1.2 },
+    { x: 1.9, y: 0.5, r: 0.6, ry: 0.7, rz: 1.15 },
+    { x: 0.9, y: 0.5, r: 0.75, ry: 0.72, rz: 1.1 },
+    { x: -0.3, y: 0.5, r: 0.7, ry: 0.72, rz: 1.05 },
+    { x: -1.5, y: 0.5, r: 0.5, ry: 0.75 },
+    { x: -2.8, y: 0.5, r: 0.28 },
+    { x: -4.2, y: 0.5, r: 0.08 },
+  ], 14));
+  const head = new THREE.Group(); head.position.set(2.6, 0.5, 0);
+  addEyes(head, 0.0, 0.28, 0.32, 0.09);
+  g.add(head);
+  for (const sx of [1, -1]) for (const zx of [1, -1]) {
+    const leg = legTapered(mat, 0.5, 0.45, 0.16, 0.11, 0.09);
+    leg.group.position.set(sx > 0 ? 1.4 : -1.0, 0.5, zx * 0.9);
+    leg.group.rotation.x = zx * 0.7;
+    g.add(leg.group); parts.legs.push(leg);
+  }
+  const scale = sp.heightM / 0.9; g.scale.setScalar(scale);
+  g.userData.parts = parts; g.userData.hipY = 0.5 * scale; g.userData.quadruped = true;
+  return g;
+}
+
+// 巨蛇(泰坦巨蟒):沿 S 形曲線放樣的超長身 + 頭,無腿。
+function snake(sp, mat) {
+  const g = new THREE.Group(); const parts = { legs: [] };
+  const nodes = []; const N = 24;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, x = 5.5 - t * 12;
+    const z = Math.sin(t * Math.PI * 2.2) * 2.2;
+    nodes.push({ x, y: 0.55, z, r: Math.max(0.06, i < 2 ? 0.5 : 0.62 * (1 - t * 0.85)) });
+  }
+  g.add(loft(mat, nodes, 14));
+  const head = new THREE.Group(); head.position.set(5.5, 0.6, 0);
+  const jaw = ellip(mat, 0.5, 0.3, 0.42); jaw.position.set(0.2, 0, 0); head.add(jaw);
+  addEyes(head, 0.15, 0.15, 0.28, 0.08);
+  g.add(head);
+  const scale = (sp.heightM || 0.7) / 0.7; g.scale.setScalar(scale);
+  g.userData.parts = parts; g.userData.hipY = 0.5 * scale;
   return g;
 }
