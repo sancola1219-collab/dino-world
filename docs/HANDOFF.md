@@ -85,7 +85,8 @@ DW.epic.start(); DW.epic.jump(75); DW.step(16); DW.epic.info(); // 紀元史詩:
 | `js/util.js` | 種子亂數、值噪聲、fBm、Canvas 輔助 |
 | `js/textures.js` | 程序化貼圖(地表+法線、皮膚反蔭蔽、樹冠 alpha、樹皮、噪聲) |
 | `js/world.js` | 谷地場景:`heightAt(x,z)` 高度場、地形/河流/植被/岩石、天空 shader、`skyStateForHour(h)` 光照曲線 |
-| `js/dino.js` | **程序化恐龍模型(寫實自然風)**。核心是 `loft(mat, spine)`:用一條脊椎節點(每點含半徑 r、垂直 ry、水平 rz)以平行移動框架放樣出**單一平滑連續身體**(鼻→尾一氣呵成,不是球黏球)。每科一個 builder 定義 spine+腿+特徵;`legTapered` 漸縮腿(可動);`userData.parts.legs` 供步態動畫。 |
+| `js/models.js` | **真實 3D 恐龍模型**(Quaternius CC0 GLB,帶骨骼走路動畫)。`MODEL_MAP` 物種→GLB;`loadModels()` 載入(init 中 await);`buildModelDino()` 用 SkeletonUtils clone、依 heightM 縮放、置中落地、朝 +X、建 AnimationMixer 播 Walk。11 隻主要恐龍用它,其餘生物用 dino.js。模型檔在 `vendor/models/*.glb`(見 CREDITS.txt)。 |
+| `js/dino.js` | **程序化生物模型**(非恐龍生物 + 甲龍/翼龍;寫實自然風)。核心是 `loft(mat, spine)`:用一條脊椎節點(每點含半徑 r、垂直 ry、水平 rz)以平行移動框架放樣出**單一平滑連續身體**(鼻→尾一氣呵成,不是球黏球)。每科一個 builder 定義 spine+腿+特徵;`legTapered` 漸縮腿(可動);`userData.parts.legs` 供步態動畫。 |
 | `js/ui.js` | 全部 DOM 介面(只反映狀態+回呼,不持有邏輯) |
 | `js/main.js` | 總指揮:狀態機、渲染迴圈、相機、互動、漫遊、`__DW` 測試 API |
 | `tools/serve.mjs` | 開發用靜態伺服器 |

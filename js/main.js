@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { SPECIES, SPECIES_BY_ID, PERIODS, PERIOD_BY_ID, speciesOfPeriod, tourOf, phaseOf, EPIC } from './data.js';
 import { buildWorld, buildSky, skyStateForHour, heightAt, WORLD } from './world.js';
 import { buildDino } from './dino.js';
+import * as MODELS from './models.js';
 import * as UI from './ui.js';
 
 /* ---------------- 狀態(唯一事實來源) ---------------- */
@@ -84,16 +85,21 @@ async function init() {
   hemi = new THREE.HemisphereLight(0xbcd3e6, 0x2a2416, 0.4);
   scene.add(ambient, hemi);
 
-  UI.setLoad(0.6, '喚醒恐龍...');
+  UI.setLoad(0.55, '載入恐龍模型...');
+  await yieldFrame();
+  await MODELS.loadModels((p, f) => UI.setLoad(0.55 + 0.08 * p, `載入恐龍模型... ${f}`));
+
+  UI.setLoad(0.64, '喚醒恐龍...');
   await yieldFrame();
 
   // 生成生物:每種一群(hero=第一隻,帶標籤、被聚焦;其餘為背景族群,散佈在 hero 周圍)。
+  // 主要恐龍用真實 3D 模型(models.js),其餘生物用程序化(dino.js)。
   let idx = 0, si = 0;
   for (const sp of SPECIES) {
     const count = sp.herd ?? defaultHerd(sp);
     for (let k = 0; k < count; k++) {
       const isHero = k === 0;
-      const root = buildDino(sp);          // 材質已快取,只重算幾何,成本低
+      const root = (MODELS.hasModel(sp.id) && MODELS.buildModelDino(sp)) || buildDino(sp);
       const jx = isHero ? 0 : (Math.random() - 0.5) * 26, jz = isHero ? 0 : (Math.random() - 0.5) * 26;
       const sx = sp.spawn.x + jx, sz = sp.spawn.z + jz;
       const rot = sp.spawn.rot + (isHero ? 0 : Math.random() * 6.28);
@@ -108,7 +114,7 @@ async function init() {
       dinos.push(d); idx++;
     }
     si++;
-    UI.setLoad(0.6 + 0.35 * (si / SPECIES.length), `喚醒生物... ${sp.name}`);
+    UI.setLoad(0.64 + 0.32 * (si / SPECIES.length), `喚醒生物... ${sp.name}`);
     if (si % 4 === 0) await yieldFrame();   // 每幾種讓步一次(hidden 分頁 setTimeout 節流,少讓步=載入更快)
   }
 
@@ -764,6 +770,8 @@ function tick(now) {
   if (epic.active) updateEpic(dt);
   updateHerd(dt);          // 陸生生物自主行為
   animateAerial(elapsed);  // 飛行/游泳生物
+  // 真實模型的骨骼動畫(只更新目前可見的)。
+  for (const d of dinos) { if (d.root.visible && d.root.userData.mixer) d.root.userData.mixer.update(dt); }
   if (epic.active) updateEpicCamera(dt);
   else if (state.view === 'overview') updateOverviewCamera(dt); else if (state.view === 'walk') updateWalkCamera(dt);
 

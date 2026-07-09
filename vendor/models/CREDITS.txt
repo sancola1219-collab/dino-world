@@ -1,0 +1,18 @@
+3D 恐龍模型來源與授權
+======================
+
+檔案:trex.glb, trike.glb, stego.glb, apato.glb, velo.glb, para.glb
+作者:Quaternius (https://quaternius.com)
+授權:CC0 1.0(公有領域,可自由用於任何用途,免署名)
+取得:透過 Poly Pizza(https://poly.pizza)的 Quaternius「Animated Dinosaurs」系列直接下載 .glb。
+
+用途:恐龍世界中主要恐龍的 3D 造型(帶走路/待機/奔跑等骨骼動畫)。
+對應(見 js/models.js 的 MODEL_MAP):
+  trex.glb  → 暴龍、異特龍
+  trike.glb → 三角龍
+  stego.glb → 劍龍
+  apato.glb → 腕龍、梁龍、板龍(蜥腳/原蜥腳類共用)
+  velo.glb  → 伶盜龍、始盜龍、腔骨龍(小型雙足共用)
+  para.glb  → 副櫛龍
+
+其餘生物(甲龍、翼龍,以及三葉蟲/長毛象等非恐龍)仍為程序化模型(js/dino.js)。
