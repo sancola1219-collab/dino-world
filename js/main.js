@@ -85,21 +85,21 @@ async function init() {
   hemi = new THREE.HemisphereLight(0xbcd3e6, 0x2a2416, 0.4);
   scene.add(ambient, hemi);
 
-  UI.setLoad(0.55, '載入恐龍模型...');
-  await yieldFrame();
-  await MODELS.loadModels((p, f) => UI.setLoad(0.55 + 0.08 * p, `載入恐龍模型... ${f}`));
+  // 真實 3D 模型整合(models.js)暫時停用:skinned GLTF 在 clone+縮放後渲染不穩定,
+  // 無法在無畫面的情況下可靠校正,先確保恐龍看得見。模型檔與載入器保留在 repo 供日後接手。
+  const USE_MODELS = false;
+  if (USE_MODELS) { UI.setLoad(0.55, '載入恐龍模型...'); await yieldFrame(); await MODELS.loadModels((p, f) => UI.setLoad(0.55 + 0.08 * p, `載入恐龍模型... ${f}`)); }
 
   UI.setLoad(0.64, '喚醒恐龍...');
   await yieldFrame();
 
   // 生成生物:每種一群(hero=第一隻,帶標籤、被聚焦;其餘為背景族群,散佈在 hero 周圍)。
-  // 主要恐龍用真實 3D 模型(models.js),其餘生物用程序化(dino.js)。
   let idx = 0, si = 0;
   for (const sp of SPECIES) {
     const count = sp.herd ?? defaultHerd(sp);
     for (let k = 0; k < count; k++) {
       const isHero = k === 0;
-      const root = (MODELS.hasModel(sp.id) && MODELS.buildModelDino(sp)) || buildDino(sp);
+      const root = (USE_MODELS && MODELS.hasModel(sp.id) && MODELS.buildModelDino(sp)) || buildDino(sp);
       const jx = isHero ? 0 : (Math.random() - 0.5) * 26, jz = isHero ? 0 : (Math.random() - 0.5) * 26;
       const sx = sp.spawn.x + jx, sz = sp.spawn.z + jz;
       const rot = sp.spawn.rot + (isHero ? 0 : Math.random() * 6.28);

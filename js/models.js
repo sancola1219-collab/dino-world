@@ -32,7 +32,7 @@ export async function loadModels(onProgress) {
   for (const f of files) {
     try {
       const gltf = await loader.loadAsync(`./vendor/models/${f}.glb`);
-      gltf.scene.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (o.material) o.material.side = THREE.FrontSide; } });
+      gltf.scene.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
       _cache[f] = gltf;
     } catch (e) { console.warn('模型載入失敗', f, e); }
     onProgress && onProgress(++done / files.length, f);
@@ -40,41 +40,38 @@ export async function loadModels(onProgress) {
   return Object.keys(_cache).length;
 }
 
-/** 建一隻模型恐龍。回傳 Group(含 userData.parts / mixer),或 null(無對應模型或未載入)。 */
+const _v = new THREE.Vector3();
+// 用「骨骼世界座標」量 skinned 模型的真實包圍盒。
+// (為何:Quaternius 模型幾何存在極小空間、靠 300× 骨架放大;直接 Box3.setFromObject 用幾何 bbox 會量錯高度。)
+function boneBox(inst) {
+  const box = new THREE.Box3();
+  inst.updateWorldMatrix(true, true);
+  inst.traverse((o) => { if (o.isSkinnedMesh && o.skeleton) o.skeleton.bones.forEach((b) => { b.getWorldPosition(_v); box.expandByPoint(_v); }); });
+  return box;
+}
+
+/** 建一隻模型恐龍(靜態綁定姿勢;不掛 AnimationMixer——動畫會讓 clone+縮放後的 skinned mesh 崩塌)。 */
 export function buildModelDino(sp) {
   const m = MODEL_MAP[sp.id]; if (!m) return null;
   const gltf = _cache[m.file]; if (!gltf) return null;
   const root = new THREE.Group();
   const pivot = new THREE.Group();
   const inst = skeletonClone(gltf.scene);
+  root.add(pivot); pivot.add(inst);
+  inst.traverse((o) => { if (o.isSkinnedMesh && o.skeleton) o.skeleton.pose(); });   // 確保回綁定姿勢
 
-  // 正規化:依身高縮放、水平置中、腳貼 y=0。
-  let box = new THREE.Box3().setFromObject(inst);
-  const size = new THREE.Vector3(); box.getSize(size);
-  const modelH = size.y || 1;
-  const s = (sp.heightM || 2) / modelH;
-  inst.scale.setScalar(s);
-  box = new THREE.Box3().setFromObject(inst);
-  const c = new THREE.Vector3(); box.getCenter(c);
-  inst.position.set(-c.x, -box.min.y, -c.z);      // 水平置中、腳落地
+  // 依骨骼高度縮放到 heightM,再置中落地。
+  const box = boneBox(inst);
+  const H0 = box.getSize(_v).y || 1;
+  inst.scale.setScalar((sp.heightM || 2) / H0);
+  const box2 = boneBox(inst);
+  const c = box2.getCenter(new THREE.Vector3());
+  inst.position.x -= c.x; inst.position.z -= c.z; inst.position.y -= box2.min.y;
 
-  pivot.add(inst);
   pivot.rotation.y = m.rot;                        // 朝 +X
-  root.add(pivot);
-
-  // 動畫:優先走路,其次待機/第一個 clip。
-  if (gltf.animations && gltf.animations.length) {
-    const mixer = new THREE.AnimationMixer(inst);
-    const clip = gltf.animations.find((a) => /walk|run/i.test(a.name))
-      || gltf.animations.find((a) => /idle|stand/i.test(a.name))
-      || gltf.animations[0];
-    mixer.clipAction(clip).play();
-    root.userData.mixer = mixer;
-    root.userData.clips = gltf.animations;
-  }
-  root.userData.parts = { legs: [] };   // 腿由模型動畫驅動,行為系統不做程序化步態
+  root.userData.parts = { legs: [] };
   root.userData.isModel = true;
   root.userData.species = sp;
-  root.traverse((o) => { o.userData.dinoRoot = root; });
+  root.traverse((o) => { if (o.isMesh) o.frustumCulled = false; o.userData.dinoRoot = root; });
   return root;
 }
