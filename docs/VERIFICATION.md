@@ -49,6 +49,7 @@
 |---|---|---|
 | 2026-07-06 | Claude Opus 4.8 | 首版。dinoCount=8;dayVsNight=true;focus/tour/walk 正常;console 零錯誤。相機預設 phi=1.32/dist=78/exposure=1.25。 |
 | 2026-07-06 | Claude Opus 4.8(年代) | **新增三疊紀/侏羅紀/白堊紀年代系統**(共 13 種恐龍)。驗證:total=13;三紀可見數 3/4/6、導覽站數對應;天空氛圍隨年代變(三疊紀暖褐 top≈[156,128,90]、侏羅紀偏綠[110,150,131]、白堊紀藍[155,175,204]);5 種新恐龍(始盜龍/腔骨龍/板龍/梁龍/異特龍)造型正常、聚焦自動切年代;timeSweep=ok;漫遊往返正常;console 零錯誤。新增 `__DW.setPeriod/period/visibleDinos`。 |
+| 2026-07-06 | Fable 5 | **真實 3D 模型正式啟用(USE_MODELS=true)**。修好三個坑:(a) skinned mesh 用 `Box3.setFromObject` 量高度會錯 → 改用 skeleton.bones 世界座標(boneBox);(b) 只縮放最外層 root,不碰骨骼階層;(c) 不掛 AnimationMixer(動畫會壓崩 clone+縮放後的 skinned mesh),改靜態 skeleton.pose()。朝向用「頭骨→尾骨」向量實測校正(多數 GLB 原生 -X、三角龍 +Z)。**驗證方法教訓:平均色差(diff)對只佔畫面 3% 的物件不敏感,會誤判「隱形」;要用「隱藏其餘物件+純色背景+數非背景像素」**。實測:8 隻模型 pct 0.84–3.85%(程序化甲龍對照 2.96%)、骨骼高度=heightM、朝向全部 fwd=[1,0]、腳貼地 gap=0、遠觀分層正常、掠食行為正常、console 零錯誤。 |
 | 2026-07-06 | Fable 5 | **修「四不像」**:(1) 三角龍頸盾 rotation.y=π/2 讓盾片側轉成一條線=隱形 → 改在 XY 平面、寬面朝側邊 + 放大(FR2.4)、眉角加長到 2.0、鼻角/臉放大 → 一眼認得出(實測 trike 包圍盒 Y 6.6→8.9);同法修翼龍頭冠。(2) 皮膚去卡通條紋:改自然斑駁(mottle+fine dark 斑+極淡縱紋+背深腹亮反蔭蔽)。(3) 法線圖預算高度場陣列(省 4× 噪聲、載入更快)。實測 97 隻、focus 正常、glErr 0、console 零錯誤。 |
 | 2026-07-06 | Fable 5 | **修全黑**:WebGL context 遺失復原處理 + 陰影 3072→2048、法線圖 512→256 降 GPU 記憶體。 |
 | 2026-07-06 | Fable 5 | **精緻化**:腿由圓柱改成放樣肌肉(每腿 6 段:髖球+大腿 loft+膝球+小腿 loft+踝球+橢球腳掌)、皮膚加程序化法線貼圖(鱗片/皺褶立體受光,normalScale 0.6)、幾何解析度提高(loft R20、球18、圓柱16、橢球20)、陰影 3072+softradius3+normalBias。實測載入 97 隻、暴龍/長毛象身體受光正常不過暗、console 零錯誤。 |

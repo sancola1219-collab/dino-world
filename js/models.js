@@ -1,23 +1,33 @@
 // models.js — 載入真實 3D 恐龍模型(Quaternius CC0,glTF/GLB)取代程序化恐龍。
 // 覆蓋範圍:主要恐龍(暴龍/異特龍/三角龍/劍龍/蜥腳類/馳龍類/副櫛龍);其餘生物仍用程序化 dino.js。
+//
+// 三個踩過的坑(改這裡前必讀):
+// 1) 這些模型的幾何存在極小空間、靠 Armature 300× 骨架放大 → `Box3.setFromObject` 量到的高度是錯的。
+//    必須用 **skeleton.bones 的世界座標** 量(見 boneBox),否則縮放係數會把恐龍壓成微米級=隱形。
+// 2) **不要縮放骨骼階層內的節點**(inst),只縮放最外層 root(剛體變換,不破壞 skinning)。
+// 3) **不要掛 AnimationMixer**:Quaternius 的動畫剪輯會動到骨架縮放,一播就把 clone+縮放後的
+//    skinned mesh 壓崩。改用靜態 `skeleton.pose()`(綁定姿勢)。
+// 朝向:各 GLB 原生前向不同(多數 -X、三角龍 +Z),rot 由「頭骨→尾骨」向量實測校正。
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 
 // species id → { file: GLB 檔名, rot: 讓模型朝 +X(本專案前向)的 Y 旋轉 }
 // 一個模型可對應多個相近物種(異特龍借暴龍、始盜/腔骨借馳龍、蜥腳類共用)。
+// rot 由「頭骨→尾骨」向量實測校正(見 docs/HANDOFF):多數模型原生朝 -X,三角龍朝 +Z。
+const R = Math.PI / 2;
 const MODEL_MAP = {
-  trex: { file: 'trex', rot: -Math.PI / 2 },
-  allo: { file: 'trex', rot: -Math.PI / 2 },
-  trike: { file: 'trike', rot: -Math.PI / 2 },
-  stego: { file: 'stego', rot: -Math.PI / 2 },
-  brachio: { file: 'apato', rot: -Math.PI / 2 },
-  diplo: { file: 'apato', rot: -Math.PI / 2 },
-  plateo: { file: 'apato', rot: -Math.PI / 2 },
-  velo: { file: 'velo', rot: -Math.PI / 2 },
-  eoraptor: { file: 'velo', rot: -Math.PI / 2 },
-  coelo: { file: 'velo', rot: -Math.PI / 2 },
-  para: { file: 'para', rot: -Math.PI / 2 },
+  trex: { file: 'trex', rot: R },
+  allo: { file: 'trex', rot: R },
+  trike: { file: 'trike', rot: 0 },
+  stego: { file: 'stego', rot: R },
+  brachio: { file: 'apato', rot: R },
+  diplo: { file: 'apato', rot: R },
+  plateo: { file: 'apato', rot: R },
+  velo: { file: 'velo', rot: R },
+  eoraptor: { file: 'velo', rot: R },
+  coelo: { file: 'velo', rot: R },
+  para: { file: 'para', rot: R },
 };
 
 const _cache = {};   // file → gltf
@@ -60,15 +70,19 @@ export function buildModelDino(sp) {
   root.add(pivot); pivot.add(inst);
   inst.traverse((o) => { if (o.isSkinnedMesh && o.skeleton) o.skeleton.pose(); });   // 確保回綁定姿勢
 
-  // 依骨骼高度縮放到 heightM,再置中落地。
-  const box = boneBox(inst);
-  const H0 = box.getSize(_v).y || 1;
-  inst.scale.setScalar((sp.heightM || 2) / H0);
-  const box2 = boneBox(inst);
-  const c = box2.getCenter(new THREE.Vector3());
-  inst.position.x -= c.x; inst.position.z -= c.z; inst.position.y -= box2.min.y;
+  // 量原生尺寸(用骨骼世界座標;skinned mesh 的 Box3.setFromObject 會量錯)。
+  const box = boneBox(root);
+  const size = box.getSize(new THREE.Vector3());
+  const H0 = size.y || 1;
 
+  // 置中 + 落地放在內層(不縮放骨骼階層);朝向放 pivot。
+  const c = box.getCenter(new THREE.Vector3());
+  inst.position.set(-c.x, -box.min.y, -c.z);
   pivot.rotation.y = m.rot;                        // 朝 +X
+
+  // **只縮放最外層 root**:縮放整個已綁定的子樹是剛體變換,不會破壞 skinning。
+  root.scale.setScalar((sp.heightM || 2) / H0);
+  root.userData.modelNativeH = H0;
   root.userData.parts = { legs: [] };
   root.userData.isModel = true;
   root.userData.species = sp;

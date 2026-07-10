@@ -87,7 +87,7 @@ async function init() {
 
   // 真實 3D 模型整合(models.js)暫時停用:skinned GLTF 在 clone+縮放後渲染不穩定,
   // 無法在無畫面的情況下可靠校正,先確保恐龍看得見。模型檔與載入器保留在 repo 供日後接手。
-  const USE_MODELS = false;
+  const USE_MODELS = true;
   if (USE_MODELS) { UI.setLoad(0.55, '載入恐龍模型...'); await yieldFrame(); await MODELS.loadModels((p, f) => UI.setLoad(0.55 + 0.08 * p, `載入恐龍模型... ${f}`)); }
 
   UI.setLoad(0.64, '喚醒恐龍...');
